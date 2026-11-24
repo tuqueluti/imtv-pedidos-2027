@@ -1,0 +1,32 @@
+{
+  "name": "imtv-pedidos-2027",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Portal de pedidos de vídeo da IMTV para 2027 para Unidades Instituto Mix e Quadro Interno IMTV",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch server/index.ts",
+    "build": "tsc -b && vite build",
+    "start": "node --experimental-sqlite --import tsx server/index.ts",
+    "test": "node --test --import tsx tests/api.test.ts",
+    "test:e2e": "tsx tests/e2e-browser.ts"
+  },
+  "dependencies": {
+    "nodemailer": "^6.10.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@types/nodemailer": "^6.4.17",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@types/three": "0.187.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "playwright-core": "^1.51.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0"
+  }
+}
