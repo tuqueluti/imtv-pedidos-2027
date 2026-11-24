@@ -139,7 +139,12 @@ export function App() {
       el?.scrollIntoView({ behavior: 'auto' });
       return;
     }
-    const targetY = Math.ceil(window.innerHeight * 2.02);
+    const track = document.querySelector('.studio-scroll-track') as HTMLElement | null;
+    const stage = document.querySelector('.studio-sticky-stage') as HTMLElement | null;
+    const targetY =
+      track && stage
+        ? Math.max(1, track.offsetHeight - stage.clientHeight + 8)
+        : Math.ceil(window.innerHeight * 2.02);
     window.scrollTo({ top: targetY, behavior: 'smooth' });
   }, [useLiteStudio]);
 

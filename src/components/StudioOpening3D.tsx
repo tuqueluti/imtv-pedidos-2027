@@ -1,10 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import * as THREE from 'three';
-import {
-  CSS3DRenderer,
-  CSS3DObject,
-} from 'three/addons/renderers/CSS3DRenderer.js';
 import { StudioOpeningAudio } from '../audio/studioAudio.ts';
 import { assetUrl } from '../api/clientApi.ts';
 import { computeMusicLoopVolume } from '../../shared/domain.ts';
@@ -235,7 +230,7 @@ export function StudioOpening3D({
   onNavigateBoard,
 }: StudioOpening3DProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
-  const cssLayerRef = useRef<HTMLDivElement | null>(null);
+  const screenDomRef = useRef<HTMLDivElement | null>(null);
   const webglLayerRef = useRef<HTMLDivElement | null>(null);
   const ytMountRef = useRef<HTMLDivElement | null>(null);
   const liteYtMountRef = useRef<HTMLDivElement | null>(null);
@@ -263,7 +258,6 @@ export function StudioOpening3D({
   const handedOffRef = useRef(false);
   const [tuningFlash, setTuningFlash] = useState(false);
   const [scrollPct, setScrollPct] = useState(0);
-  const [portalScreenEl, setPortalScreenEl] = useState<HTMLDivElement | null>(null);
 
   // Monitora troca entre orientação vertical/celular e horizontal/desktop
   useEffect(() => {
@@ -627,30 +621,19 @@ export function StudioOpening3D({
       }
       ytPlayerRef.current = null;
     };
-  }, [useLiteMode, portalScreenEl, advanceMusicLoop]);
+  }, [useLiteMode, advanceMusicLoop]);
 
-  // Cena 3D Multi-Plano Fotorrealista em Three.js r187 (16:9 Desktop + 9:16 Smartphone Centralizado)
+  // Cena 3D Multi-Plano Fotorrealista em Three.js r187 (projeção direta 2D sem bug preserve-3d no iOS WebKit)
   useEffect(() => {
     if (useLiteMode) {
-      setPortalScreenEl(null);
       onFormRevealedChange(true);
       return;
     }
 
-    const cssHost = cssLayerRef.current;
     const webglHost = webglLayerRef.current;
-    if (!cssHost || !webglHost) return;
+    if (!webglHost) return;
 
     const stage: StageSpec = isMobileStage ? MOBILE_STAGE : DESKTOP_STAGE;
-    const domScreenPxH = Math.round(
-      DOM_SCREEN_PX_W * (stage.tvScreenH / stage.tvScreenW)
-    );
-
-    const screenDom = document.createElement('div');
-    screenDom.className = 'tv-screen-dom';
-    screenDom.style.width = `${DOM_SCREEN_PX_W}px`;
-    screenDom.style.height = `${domScreenPxH}px`;
-    setPortalScreenEl(screenDom);
 
     const disposables: Array<{ dispose: () => void }> = [];
     const trackGeo = <T extends THREE.BufferGeometry>(g: T): T => {
@@ -667,12 +650,17 @@ export function StudioOpening3D({
     };
 
     const scene = new THREE.Scene();
-    const cssScene = new THREE.Scene();
 
-    const width = webglHost.clientWidth || window.innerWidth;
-    const height = webglHost.clientHeight || window.innerHeight;
+    const initRect = webglHost.getBoundingClientRect();
+    let lastRendererW = Math.max(1, Math.round(initRect.width || window.innerWidth));
+    let lastRendererH = Math.max(1, Math.round(initRect.height || window.innerHeight));
 
-    const camera = new THREE.PerspectiveCamera(BASE_FOV, width / height, 0.05, 25);
+    const camera = new THREE.PerspectiveCamera(
+      BASE_FOV,
+      lastRendererW / lastRendererH,
+      0.05,
+      25
+    );
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -680,23 +668,13 @@ export function StudioOpening3D({
       powerPreference: 'high-performance',
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(width, height);
+    renderer.setSize(lastRendererW, lastRendererH);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.NoToneMapping;
     renderer.setClearColor(0x050608, 1);
 
     webglHost.innerHTML = '';
     webglHost.appendChild(renderer.domElement);
-
-    const cssRenderer = new CSS3DRenderer();
-    cssRenderer.setSize(width, height);
-    cssHost.innerHTML = '';
-    cssHost.appendChild(cssRenderer.domElement);
-
-    const cssScreenObj = new CSS3DObject(screenDom);
-    cssScreenObj.position.set(stage.tvX, stage.tvY, 0);
-    cssScreenObj.scale.setScalar(stage.tvScreenW / DOM_SCREEN_PX_W);
-    cssScene.add(cssScreenObj);
 
     const loader = new THREE.TextureLoader();
     const onTexLoaded = (tex: THREE.Texture) => {
@@ -842,8 +820,16 @@ export function StudioOpening3D({
     function updateSceneForScroll() {
       const hostEl = webglLayerRef.current;
       if (!hostEl) return;
-      const vw = hostEl.clientWidth || window.innerWidth;
-      const vh = hostEl.clientHeight || window.innerHeight;
+      const hostRect = hostEl.getBoundingClientRect();
+      const vw = Math.max(1, hostRect.width || hostEl.clientWidth || window.innerWidth);
+      const vh = Math.max(1, hostRect.height || hostEl.clientHeight || window.innerHeight);
+
+      if (Math.abs(vw - lastRendererW) > 0.5 || Math.abs(vh - lastRendererH) > 0.5) {
+        lastRendererW = vw;
+        lastRendererH = vh;
+        renderer.setSize(vw, vh);
+      }
+
       const aspect = vw / Math.max(1, vh);
       const stageAspect = stage.planeW / stage.planeH;
 
@@ -946,6 +932,22 @@ export function StudioOpening3D({
       const minY = Math.min(cornerBL.y, cornerBR.y);
       const maxY = Math.max(cornerTL.y, cornerTR.y);
 
+      // Posiciona diretamente a caixa DOM do player nas coordenadas exatas da abertura WebGL da TV (zero matrix3d/preserve-3d)
+      const screenEl = screenDomRef.current;
+      if (screenEl) {
+        const leftPx = (cornerTL.x * 0.5 + 0.5) * vw;
+        const rightPx = (cornerBR.x * 0.5 + 0.5) * vw;
+        const topPx = (-cornerTL.y * 0.5 + 0.5) * vh;
+        const bottomPx = (-cornerBR.y * 0.5 + 0.5) * vh;
+        const boxW = Math.max(1, rightPx - leftPx);
+        const boxH = Math.max(1, bottomPx - topPx);
+
+        screenEl.style.left = `${leftPx.toFixed(2)}px`;
+        screenEl.style.top = `${topPx.toFixed(2)}px`;
+        screenEl.style.width = `${boxW.toFixed(2)}px`;
+        screenEl.style.height = `${boxH.toFixed(2)}px`;
+      }
+
       const frameExitedAllFour =
         minX < -1.0 && maxX > 1.0 && minY < -1.0 && maxY > 1.0;
 
@@ -972,17 +974,20 @@ export function StudioOpening3D({
 
       if (!handedOffRef.current || rawProgress < 1) {
         renderer.render(scene, camera);
-        cssRenderer.render(cssScene, camera);
       }
     }
 
     const handleResize = () => {
-      const w = webglHost.clientWidth || window.innerWidth;
-      const h = webglHost.clientHeight || window.innerHeight;
-      renderer.setSize(w, h);
-      cssRenderer.setSize(w, h);
       updateSceneForScroll();
     };
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        updateSceneForScroll();
+      });
+      resizeObserver.observe(webglHost);
+    }
 
     let rafPending = false;
     const onScroll = () => {
@@ -998,14 +1003,18 @@ export function StudioOpening3D({
 
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', handleResize);
+    window.visualViewport?.addEventListener('resize', handleResize);
+    window.visualViewport?.addEventListener('scroll', onScroll);
     updateSceneForScroll();
 
     return () => {
       requestRenderRef.current = null;
+      resizeObserver?.disconnect();
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', handleResize);
+      window.visualViewport?.removeEventListener('resize', handleResize);
+      window.visualViewport?.removeEventListener('scroll', onScroll);
       if (flashTimer) window.clearTimeout(flashTimer);
-      setPortalScreenEl(null);
       for (const item of disposables) {
         item.dispose();
       }
@@ -1120,10 +1129,8 @@ export function StudioOpening3D({
         className={`studio-sticky-stage ${handedOff ? 'is-handed-off' : ''}`}
         aria-label="Abertura Estúdio de Gravação IMTV 3D"
       >
-        <div ref={cssLayerRef} className="studio-css3d-layer" />
-
-        {portalScreenEl &&
-          createPortal(
+        <div className="studio-css3d-layer">
+          <div ref={screenDomRef} className="tv-screen-dom">
             <div className="tv-aspect-inner">
               {ytUnavailable ? (
                 <div className="tv-fallback-cover">
@@ -1150,7 +1157,7 @@ export function StudioOpening3D({
                 </div>
               ) : (
                 <>
-                  <div ref={ytMountRef} style={{ width: '100%', height: '100%' }} />
+                  <div ref={ytMountRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
                   {ytNeedsTap && (
                     <button
                       type="button"
@@ -1163,9 +1170,9 @@ export function StudioOpening3D({
                   )}
                 </>
               )}
-            </div>,
-            portalScreenEl
-          )}
+            </div>
+          </div>
+        </div>
 
         <div ref={webglLayerRef} className="studio-webgl-layer" />
 

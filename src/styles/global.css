@@ -497,6 +497,7 @@ body {
 .studio-scroll-track {
   position: relative;
   height: 300vh;
+  height: 300svh;
   background: var(--bg-pure);
 }
 
@@ -505,6 +506,7 @@ body {
   top: 0;
   width: 100%;
   height: 100vh;
+  height: 100svh;
   overflow: hidden;
   background: var(--bg-pure);
   z-index: 10;
@@ -575,25 +577,26 @@ body {
 }
 
 .tv-screen-dom {
-  background: #05070b;
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: #000000;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .tv-aspect-inner {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  aspect-ratio: 16 / 9;
-  max-height: 100%;
-  position: relative;
-  background: #05070b;
+  height: 100%;
+  background: #000000;
 }
 
 .tv-screen-dom iframe {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
   border: 0;
   display: block;
 }
@@ -717,6 +720,7 @@ body {
 
 .form-portal-section.with-3d-handoff {
   margin-top: -100vh;
+  margin-top: -100svh;
 }
 
 .form-portal-section.with-3d-handoff.is-waiting-tv {

@@ -167,11 +167,34 @@ async function runE2E() {
     await page.waitForTimeout(40);
     assert.equal(await getStageClaquete(), 'aberta');
 
-    // Clique curto (< 80ms): permanece fechada ~80ms e reabre
-    await page.mouse.click(220, 220, { delay: 5 });
-    assert.equal(await getStageClaquete(), 'fechada');
-    await page.waitForTimeout(105);
-    assert.equal(await getStageClaquete(), 'aberta');
+    // Clique curto (< 80ms) medido no próprio relógio da página sem latência de IPC: permanece fechada ~80ms e reabre
+    const quickClickStates = await page.evaluate(async () => {
+      const target = document.elementFromPoint(220, 220);
+      if (!target) return null;
+      const baseInit = {
+        bubbles: true,
+        cancelable: true,
+        clientX: 220,
+        clientY: 220,
+        pointerId: 1,
+        pointerType: 'mouse',
+        isPrimary: true,
+      };
+      target.dispatchEvent(new PointerEvent('pointerdown', { ...baseInit, button: 0, buttons: 1 }));
+      const duringDown = target.getAttribute('data-imtv-claquete');
+      await new Promise((r) => setTimeout(r, 5));
+      window.dispatchEvent(new PointerEvent('pointerup', { ...baseInit, button: 0, buttons: 0 }));
+      await new Promise((r) => setTimeout(r, 20));
+      const stillClosedAt25ms = target.getAttribute('data-imtv-claquete');
+      await new Promise((r) => setTimeout(r, 95));
+      const reopenedAfter120ms = target.getAttribute('data-imtv-claquete');
+      return { duringDown, stillClosedAt25ms, reopenedAfter120ms };
+    });
+    assert.deepEqual(quickClickStates, {
+      duringDown: 'fechada',
+      stillClosedAt25ms: 'fechada',
+      reopenedAfter120ms: 'aberta',
+    });
 
     // Controle de som possui data-imtv-cursor-nativo -> não recebe atributo da claquete
     const soundBox = await soundBtn.boundingBox();
@@ -433,29 +456,56 @@ async function runE2E() {
     const mobileErrors: string[] = [];
     mPage.on('pageerror', (err) => mobileErrors.push(err.message));
 
+    // Simula abertura vinda do WhatsApp no iPhone (mudança dinâmica de altura 710 -> 844 da barra do Safari)
+    await mPage.setViewportSize({ width: 390, height: 710 });
     await mPage.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-    await mPage.waitForTimeout(1000);
+    await mPage.waitForTimeout(450);
+    await mPage.setViewportSize({ width: 390, height: 844 });
+    await mPage.waitForTimeout(650);
 
-    // Verifica no celular (390x844) que o estúdio vertical está ativo, com som ligado e TV 100% dentro e centralizada!
+    // Verifica no celular (390x844) que o estúdio vertical está ativo, com som ligado e TV + player 100% encaixados sem deslocamento!
     assert.equal(await mPage.locator('.studio-scroll-track').getAttribute('data-stage-mode'), 'mobile');
     assert.equal(await mPage.getByTestId('toggle-sound-btn').getAttribute('aria-pressed'), 'true');
 
     const mobileTvRect = await mPage.evaluate(() => {
-      const el = document.querySelector('.tv-screen-dom');
-      if (!el) return null;
+      const el = document.querySelector('.tv-screen-dom') as HTMLElement | null;
+      const inner = document.querySelector('.tv-aspect-inner') as HTMLElement | null;
+      const iframeOrMount = (el?.querySelector('iframe') || el?.querySelector('div')) as HTMLElement | null;
+      const canvas = document.querySelector('.studio-webgl-layer canvas') as HTMLCanvasElement | null;
+      if (!el || !inner || !iframeOrMount || !canvas) return null;
       const r = el.getBoundingClientRect();
+      const ri = inner.getBoundingClientRect();
+      const rf = iframeOrMount.getBoundingClientRect();
+      const rc = canvas.getBoundingClientRect();
       return {
         left: r.left,
         right: r.right,
+        top: r.top,
+        bottom: r.bottom,
         width: r.width,
+        height: r.height,
         centerX: (r.left + r.right) / 2,
         viewportCenter: window.innerWidth / 2,
+        transform: getComputedStyle(el).transform,
+        canvasHeight: rc.height,
+        innerTopDiff: Math.abs(r.top - ri.top),
+        innerHeightDiff: Math.abs(r.height - ri.height),
+        childTopDiff: Math.abs(r.top - rf.top),
+        childHeightDiff: Math.abs(r.height - rf.height),
       };
     });
     assert.ok(mobileTvRect, 'Elemento .tv-screen-dom ausente no celular');
+    assert.equal(mobileTvRect.transform, 'none');
+    assert.equal(Math.round(mobileTvRect.canvasHeight), 844);
+    assert.ok(mobileTvRect.innerTopDiff < 0.5 && mobileTvRect.innerHeightDiff < 0.5);
+    assert.ok(mobileTvRect.childTopDiff < 0.5 && mobileTvRect.childHeightDiff < 0.5);
     assert.ok(
       mobileTvRect.left >= 25 && mobileTvRect.right <= 365,
       `TV cortada no celular: left=${mobileTvRect.left}, right=${mobileTvRect.right}`
+    );
+    assert.ok(
+      mobileTvRect.top >= 260 && mobileTvRect.bottom <= 520,
+      `Posição vertical da TV fora do vidro: top=${mobileTvRect.top}, bottom=${mobileTvRect.bottom}`
     );
     assert.ok(
       Math.abs(mobileTvRect.centerX - mobileTvRect.viewportCenter) <= 22,
