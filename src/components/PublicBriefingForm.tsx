@@ -397,9 +397,10 @@ export function PublicBriefingForm({
       className={sectionClasses}
       aria-labelledby="pedido-main-heading"
     >
-      {/* Faixa Superior Iluminada do Estúdio: Logo IMTV | Portal de pedidos */}
+      {/* Faixa Superior Iluminada do Estúdio Fixa no Topo do Formulário */}
       <header
-        className="studio-top-banner"
+        className="studio-top-banner studio-top-banner-fixed"
+        data-testid="form-fixed-header"
         style={{
           backgroundImage: `url("${assetUrl('/studio/studio-header-banner.jpg')}")`,
         }}

@@ -247,6 +247,18 @@ async function runE2E() {
 
     const reviewPhone = await page.getByTestId('review-whatsapp-display').textContent();
     assert.equal(reviewPhone?.trim(), '+55 (48) 99876-5432');
+
+    // Confere que o cabeçalho do formulário permanece fixo no topo (top = 0) mesmo rolando até o fim do formulário
+    await page.evaluate(() => window.scrollTo(0, 2550));
+    await page.waitForTimeout(200);
+    const fixedHeaderTop = await page
+      .getByTestId('form-fixed-header')
+      .evaluate((el) => el.getBoundingClientRect().top);
+    assert.ok(
+      Math.abs(fixedHeaderTop) <= 1,
+      `Cabeçalho do formulário deveria estar fixo em top=0, mas está em top=${fixedHeaderTop}`
+    );
+
     await page.screenshot({ path: path.join(shotsDir, '04-desktop-formulario-completo.png'), fullPage: false });
 
     // Simula falha de gravação e verifica preservação dos dados na tela
