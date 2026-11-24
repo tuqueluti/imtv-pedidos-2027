@@ -39,8 +39,16 @@ function readCurrentRoute(): 'public' | 'board' {
   return 'public';
 }
 
+function dispatchClaqueteSoundState(ativo: boolean): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('imtv:som', { detail: { ativo } }));
+}
+
 export function App() {
   const [route, setRoute] = useState<'public' | 'board'>(() => readCurrentRoute());
+
+  // O som já inicia ativado ao entrar no link, sincronizando vídeo, ambiência e claquete
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
 
   const [publicConfig, setPublicConfig] = useState<PublicPortalConfig>({
     recipientTeamName: 'Equipe de Produção da IMTV',
@@ -53,6 +61,22 @@ export function App() {
   const [formRevealedByScroll, setFormRevealedByScroll] = useState<boolean>(() =>
     detectShouldUseLiteStudio()
   );
+
+  // Sincroniza o estado de som com o script clássico defer da claquete (imtv:som)
+  useEffect(() => {
+    dispatchClaqueteSoundState(soundEnabled);
+    const t1 = window.setTimeout(() => dispatchClaqueteSoundState(soundEnabled), 80);
+    const onWindowLoad = () => dispatchClaqueteSoundState(soundEnabled);
+    window.addEventListener('load', onWindowLoad);
+    return () => {
+      window.clearTimeout(t1);
+      window.removeEventListener('load', onWindowLoad);
+    };
+  }, [soundEnabled]);
+
+  const handleToggleSound = useCallback(() => {
+    setSoundEnabled((prev) => !prev);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -124,6 +148,8 @@ export function App() {
       <InternalPipefyBoard
         logoUrl={publicConfig.logoUrl}
         recipientTeamName={publicConfig.recipientTeamName}
+        soundEnabled={soundEnabled}
+        onToggleSound={handleToggleSound}
         onPublicConfigChanged={(cfg) =>
           setPublicConfig({
             recipientTeamName: cfg.recipientTeamName,
@@ -140,6 +166,8 @@ export function App() {
       <StudioOpening3D
         logoUrl={publicConfig.logoUrl}
         useLiteMode={useLiteStudio}
+        soundEnabled={soundEnabled}
+        onToggleSound={handleToggleSound}
         onFormRevealedChange={setFormRevealedByScroll}
         onJumpToOrder={handleJumpToOrder}
         onNavigateBoard={() => navigateTo('board')}
@@ -147,6 +175,8 @@ export function App() {
       <PublicBriefingForm
         logoUrl={publicConfig.logoUrl}
         recipientTeamName={publicConfig.recipientTeamName}
+        soundEnabled={soundEnabled}
+        onToggleSound={handleToggleSound}
         with3dHandoff={!useLiteStudio}
         isRevealed={useLiteStudio || formRevealedByScroll}
         onNavigateBoard={() => navigateTo('board')}

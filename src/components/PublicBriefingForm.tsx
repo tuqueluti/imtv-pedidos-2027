@@ -123,6 +123,8 @@ interface SubmissionSuccessData {
 interface PublicBriefingFormProps {
   logoUrl: string | null;
   recipientTeamName: string;
+  soundEnabled: boolean;
+  onToggleSound: () => void;
   with3dHandoff: boolean;
   isRevealed: boolean;
   onNavigateBoard: () => void;
@@ -131,6 +133,8 @@ interface PublicBriefingFormProps {
 export function PublicBriefingForm({
   logoUrl,
   recipientTeamName,
+  soundEnabled,
+  onToggleSound,
   with3dHandoff,
   isRevealed,
   onNavigateBoard,
@@ -407,13 +411,25 @@ export function PublicBriefingForm({
             <span className="studio-top-subtitle">Portal de pedidos</span>
           </div>
 
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={onNavigateBoard}
-          >
-            Área da equipe
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onToggleSound}
+              aria-pressed={soundEnabled}
+              data-imtv-cursor-nativo=""
+              data-sound-toggle="true"
+            >
+              {soundEnabled ? 'Silenciar som' : 'Ativar som'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onNavigateBoard}
+            >
+              Área da equipe
+            </button>
+          </div>
         </div>
       </header>
 

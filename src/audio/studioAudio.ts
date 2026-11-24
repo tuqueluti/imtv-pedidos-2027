@@ -35,14 +35,24 @@ export class StudioOpeningAudio {
     return this.enabled && !this.terminated;
   }
 
-  public enableSound(): void {
+  public enableSound(silentClick = false): void {
     const ctx = this.ensureContext();
     this.terminated = false;
     this.enabled = true;
     if (!ctx) return;
 
-    this.playSwitchClick(ctx);
+    if (!silentClick && ctx.state === 'running') {
+      this.playSwitchClick(ctx);
+    }
     this.startLowStudioAmbience(ctx);
+  }
+
+  public resumeOnUserGestureIfEnabled(): void {
+    if (!this.enabled || this.terminated) return;
+    const ctx = this.ensureContext();
+    if (ctx && !this.ambienceSource) {
+      this.startLowStudioAmbience(ctx);
+    }
   }
 
   public disableSound(): void {

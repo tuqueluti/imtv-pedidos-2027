@@ -130,14 +130,60 @@ async function runE2E() {
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(950);
 
-    await page.getByRole('button', { name: 'Ativar som' }).waitFor({ state: 'visible' });
+    // 1a. Som já deve iniciar ativado ao entrar no link
+    const soundBtn = page.getByTestId('toggle-sound-btn');
+    await soundBtn.waitFor({ state: 'visible' });
+    assert.equal(await soundBtn.getAttribute('aria-pressed'), 'true');
+    assert.equal((await soundBtn.textContent())?.trim(), 'Silenciar som');
+
     await page.getByRole('button', { name: 'Ir direto ao pedido' }).waitFor({ state: 'visible' });
     await page.screenshot({ path: path.join(shotsDir, '01-desktop-estudio-3d-frame0.png') });
 
-    await page.getByRole('button', { name: 'Ativar som' }).click();
-    await page.getByRole('button', { name: 'Desativar som' }).waitFor({ state: 'visible' });
+    // 1b. Valida cursor de claquete (aberta em repouso, fechada no clique curto ~80ms e longo, nativo preservado)
+    const jumpBtn = page.getByRole('button', { name: 'Ir direto ao pedido' });
+    const jumpBox = await jumpBtn.boundingBox();
+    assert.ok(jumpBox);
+    const cx = jumpBox.x + jumpBox.width / 2;
+    const cy = jumpBox.y + jumpBox.height / 2;
+
+    await page.mouse.move(cx, cy);
+    assert.equal(await jumpBtn.getAttribute('data-imtv-claquete'), 'aberta');
+    const computedCursor = await jumpBtn.evaluate((el) => getComputedStyle(el).cursor);
+    assert.ok(computedCursor.includes('claquete-aberta'), `Cursor inesperado: ${computedCursor}`);
+
+    // Clique longo na área livre do estúdio (sem disparar navegação)
+    await page.mouse.move(220, 220);
+    const getStageClaquete = () =>
+      page.evaluate(() => document.elementFromPoint(220, 220)?.getAttribute('data-imtv-claquete') ?? null);
+
+    assert.equal(await getStageClaquete(), 'aberta');
+    await page.mouse.down();
+    assert.equal(await getStageClaquete(), 'fechada');
+    await page.waitForTimeout(150);
+    assert.equal(await getStageClaquete(), 'fechada');
+    await page.mouse.up();
+    await page.waitForTimeout(40);
+    assert.equal(await getStageClaquete(), 'aberta');
+
+    // Clique curto (< 80ms): permanece fechada ~80ms e reabre
+    await page.mouse.click(220, 220, { delay: 5 });
+    assert.equal(await getStageClaquete(), 'fechada');
+    await page.waitForTimeout(105);
+    assert.equal(await getStageClaquete(), 'aberta');
+
+    // Controle de som possui data-imtv-cursor-nativo -> não recebe atributo da claquete
+    const soundBox = await soundBtn.boundingBox();
+    assert.ok(soundBox);
+    await page.mouse.move(soundBox.x + soundBox.width / 2, soundBox.y + soundBox.height / 2);
+    assert.equal(await soundBtn.getAttribute('data-imtv-claquete'), null);
+
+    // Testa alternar mudo e reativar som
+    await soundBtn.click();
+    assert.equal(await soundBtn.getAttribute('aria-pressed'), 'false');
+    await soundBtn.click();
+    assert.equal(await soundBtn.getAttribute('aria-pressed'), 'true');
 
     await page.evaluate(() => window.scrollTo(0, 650));
     await page.waitForTimeout(350);
@@ -173,6 +219,12 @@ async function runE2E() {
     assert.ok(boxesLayout && boxesLayout.topDiff < 10 && boxesLayout.leftDiff > 200);
 
     // Preenche 01 Identificação, 02 Briefing e 03 Materiais e revisão
+    const unitInput = page.locator('#f-unitName');
+    const unitInputBox = await unitInput.boundingBox();
+    assert.ok(unitInputBox);
+    await page.mouse.move(unitInputBox.x + 24, unitInputBox.y + 18);
+    assert.equal(await unitInput.getAttribute('data-imtv-claquete'), null);
+
     await page.fill('#f-unitName', 'Instituto Mix Florianópolis Centro');
     await page.fill('#f-city', 'Florianópolis');
     await page.selectOption('#f-uf', 'SC');
@@ -241,7 +293,12 @@ async function runE2E() {
     ]);
 
     assert.equal(await page.getByTestId('col-count-Recebido').textContent(), '1');
-    assert.equal(await page.getByTestId(`order-card-${protocol1}`).count(), 1);
+    const receivedCard = page.getByTestId(`order-card-${protocol1}`);
+    assert.equal(await receivedCard.count(), 1);
+    const cardBox = await receivedCard.boundingBox();
+    assert.ok(cardBox);
+    await page.mouse.move(cardBox.x + 20, cardBox.y + 20);
+    assert.equal(await receivedCard.getAttribute('data-imtv-claquete'), null);
 
     // Move diretamente para "Tati" -> depois "Aguardando" -> registra pendência -> recarrega página
     await page.getByTestId(`move-select-${protocol1}`).selectOption('Tati');
@@ -345,7 +402,36 @@ async function runE2E() {
     mPage.on('pageerror', (err) => mobileErrors.push(err.message));
 
     await mPage.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-    await mPage.waitForTimeout(700);
+    await mPage.waitForTimeout(1000);
+
+    // Verifica no celular (390x844) que o estúdio vertical está ativo, com som ligado e TV 100% dentro e centralizada!
+    assert.equal(await mPage.locator('.studio-scroll-track').getAttribute('data-stage-mode'), 'mobile');
+    assert.equal(await mPage.getByTestId('toggle-sound-btn').getAttribute('aria-pressed'), 'true');
+
+    const mobileTvRect = await mPage.evaluate(() => {
+      const el = document.querySelector('.tv-screen-dom');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return {
+        left: r.left,
+        right: r.right,
+        width: r.width,
+        centerX: (r.left + r.right) / 2,
+        viewportCenter: window.innerWidth / 2,
+      };
+    });
+    assert.ok(mobileTvRect, 'Elemento .tv-screen-dom ausente no celular');
+    assert.ok(
+      mobileTvRect.left >= 25 && mobileTvRect.right <= 365,
+      `TV cortada no celular: left=${mobileTvRect.left}, right=${mobileTvRect.right}`
+    );
+    assert.ok(
+      Math.abs(mobileTvRect.centerX - mobileTvRect.viewportCenter) <= 22,
+      `TV descentralizada no celular: centerX=${mobileTvRect.centerX} vs ${mobileTvRect.viewportCenter}`
+    );
+
+    await mPage.screenshot({ path: path.join(shotsDir, '00-mobile-estudio-3d-centralizado.png') });
+
     await mPage.getByRole('button', { name: 'Ir direto ao pedido' }).click();
     await mPage.waitForTimeout(700);
 

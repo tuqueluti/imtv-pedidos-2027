@@ -12,44 +12,106 @@ import { ImtvLogo } from './ImtvLogo.tsx';
 const YOUTUBE_VIDEO_ID = 'iTKp3kyNw4c';
 const YOUTUBE_WATCH_URL = `https://www.youtube.com/watch?v=${YOUTUBE_VIDEO_ID}`;
 
-/**
- * Geometria exata medida na imagem de referência do estúdio (1024 x 576 = 16:9):
- * Plano de referência em z = 0 com altura PLANE_H = 2.0m e largura PLANE_W = 3.555556m.
- * - Vidro interno da TV 50": px [577..883], py [162..339]
- * - Logo oficial IMTV na parede preta acima da TV: px [646..814], py [58..116]
- * - Câmera em tripé em primeiro plano: z = +1.18m (passa pela borda esquerda ao rolar)
- * - Estúdio / chroma key / refletor / case NO AR ao fundo: z = -0.95m (desloca mais devagar)
- */
+interface StageSpec {
+  mode: 'desktop' | 'mobile';
+  planeW: number;
+  planeH: number;
+  bgPlaneH: number;
+  fgPlaneH: number;
+  tvX: number;
+  tvY: number;
+  tvScreenW: number;
+  tvScreenH: number;
+  cabinetW: number;
+  cabinetH: number;
+  logoX: number;
+  logoY: number;
+  logoW: number;
+  logoH: number;
+  bgUrl: string;
+  tvUrl: string;
+  fgUrl: string;
+}
+
 const PLANE_H = 2.0;
-const PLANE_W = (PLANE_H * 16) / 9; // 3.555556m
 
-const TV_X = ((730.0 / 1024.0) - 0.5) * PLANE_W;       // +0.75694m
-const TV_Y = (0.5 - (250.5 / 576.0)) * PLANE_H;        // +0.13021m
-const TV_SCREEN_W = (306.0 / 1024.0) * PLANE_W;        // 1.06250m
-const TV_SCREEN_H = (177.0 / 576.0) * PLANE_H;         // 0.61458m
+/**
+ * Geometria 16:9 (1024 x 576) do estúdio horizontal para computadores:
+ * - Vidro interno da TV 50": px [577..883], py [162..339]
+ * - Identificação física IMTV na parede preta: px [646..814], py [58..116]
+ */
+const DESKTOP_W = (PLANE_H * 16) / 9; // 3.555556m
+const DESKTOP_STAGE: StageSpec = {
+  mode: 'desktop',
+  planeW: DESKTOP_W,
+  planeH: PLANE_H,
+  bgPlaneH: PLANE_H,
+  fgPlaneH: PLANE_H,
+  tvX: (730.0 / 1024.0 - 0.5) * DESKTOP_W,
+  tvY: (0.5 - 250.5 / 576.0) * PLANE_H,
+  tvScreenW: (306.0 / 1024.0) * DESKTOP_W,
+  tvScreenH: (177.0 / 576.0) * PLANE_H,
+  cabinetW: 1.04,
+  cabinetH: 0.84,
+  logoX: (730.0 / 1024.0 - 0.5) * DESKTOP_W,
+  logoY: (0.5 - 88.0 / 576.0) * PLANE_H,
+  logoW: (196.0 / 1024.0) * DESKTOP_W,
+  logoH: (70.0 / 576.0) * PLANE_H,
+  bgUrl: '/studio/studio-bg-stage.jpg',
+  tvUrl: '/studio/studio-mid-tv.webp',
+  fgUrl: '/studio/studio-fg-tripod.webp',
+};
 
-const LOGO_X = ((730.0 / 1024.0) - 0.5) * PLANE_W;     // +0.75694m (centralizado acima da TV)
-const LOGO_Y = (0.5 - (88.0 / 576.0)) * PLANE_H;       // +0.69444m
-const LOGO_W = (196.0 / 1024.0) * PLANE_W;             // 0.68056m
-const LOGO_H = (70.0 / 576.0) * PLANE_H;               // 0.24306m
+/**
+ * Geometria 9:16 (576 x 1024) do estúdio vertical para smartphones e telas menores:
+ * - TV 50" centralizada: gabinete px [170..499], vidro interno px [191..476], py [386..554]
+ * - Identificação física IMTV acima da TV: px [246..464], py [267..335]
+ */
+const MOBILE_W = (PLANE_H * 9) / 16; // 1.125m
+const MOBILE_STAGE: StageSpec = {
+  mode: 'mobile',
+  planeW: MOBILE_W,
+  planeH: PLANE_H,
+  bgPlaneH: PLANE_H * (1248.0 / 1024.0),
+  fgPlaneH: PLANE_H * (1248.0 / 1024.0),
+  tvX: (333.5 / 576.0 - 0.5) * MOBILE_W,
+  tvY: (0.5 - 470.0 / 1024.0) * PLANE_H,
+  tvScreenW: (285.0 / 576.0) * MOBILE_W,
+  tvScreenH: (168.0 / 1024.0) * PLANE_H,
+  cabinetW: 0.62,
+  cabinetH: 0.52,
+  logoX: (355.0 / 576.0 - 0.5) * MOBILE_W,
+  logoY: (0.5 - 301.0 / 1024.0) * PLANE_H,
+  logoW: (224.0 / 576.0) * MOBILE_W,
+  logoH: (74.0 / 1024.0) * PLANE_H,
+  bgUrl: '/studio/studio-mobile-bg.jpg',
+  tvUrl: '/studio/studio-mobile-mid-tv.webp',
+  fgUrl: '/studio/studio-mobile-fg-tripod.webp',
+};
 
 const BASE_FOV = 38;
 const TAN_HALF_BASE_FOV = Math.tan(THREE.MathUtils.degToRad(BASE_FOV * 0.5));
-// Distância de projeção onde um plano 16:9 de altura 2.0m preenche exatamente o campo vertical
-const Z_REF = PLANE_H / (2 * TAN_HALF_BASE_FOV);       // ~2.9042m
+const Z_REF = PLANE_H / (2 * TAN_HALF_BASE_FOV); // ~2.9042m
 
 const Z_BG = -0.95;
 const Z_LOGO = -0.12;
 const Z_FG_TRIPOD = 1.18;
 
 const DOM_SCREEN_PX_W = 960;
-const DOM_SCREEN_PX_H = Math.round(DOM_SCREEN_PX_W * (TV_SCREEN_H / TV_SCREEN_W)); // 555px
+
+function detectIsMobileStage(): boolean {
+  if (typeof window === 'undefined') return false;
+  const w = window.innerWidth || 1024;
+  const h = Math.max(1, window.innerHeight || 768);
+  return w < 860 || w / h < 1.05;
+}
 
 interface YTPlayerInstance {
   playVideo?: () => void;
   pauseVideo?: () => void;
   mute?: () => void;
   unMute?: () => void;
+  isMuted?: () => boolean;
   setVolume?: (v: number) => void;
   getPlayerState?: () => number;
   destroy?: () => void;
@@ -108,11 +170,6 @@ function loadYouTubeIframeApi(): Promise<boolean> {
   return ytApiPromise;
 }
 
-/**
- * Desenha a identificação física da IMTV diretamente sobre fundo transparente na parede preta
- * (preservando cores, proporções e área de respiro, com leve luz quente do refletor direito,
- * ou exibindo "IMTV" em texto caso o arquivo esteja pendente).
- */
 function renderWallSignCanvas(
   canvas: HTMLCanvasElement,
   img: HTMLImageElement | null
@@ -129,14 +186,14 @@ function renderWallSignCanvas(
   ctx.shadowOffsetY = 5;
 
   if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
-    const maxW = w * 0.82;
-    const maxH = h * 0.76;
+    const maxW = w * 0.84;
+    const maxH = h * 0.78;
     const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
     const drawW = img.naturalWidth * scale;
     const drawH = img.naturalHeight * scale;
     const dx = (w - drawW) / 2;
     const dy = (h - drawH) / 2;
-    ctx.globalAlpha = 0.92;
+    ctx.globalAlpha = 0.94;
     ctx.drawImage(img, dx, dy, drawW, drawH);
   } else {
     ctx.fillStyle = '#e8e2d8';
@@ -156,6 +213,8 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 interface StudioOpening3DProps {
   logoUrl: string | null;
   useLiteMode: boolean;
+  soundEnabled: boolean;
+  onToggleSound: () => void;
   onFormRevealedChange: (revealed: boolean) => void;
   onJumpToOrder: () => void;
   onNavigateBoard: () => void;
@@ -164,6 +223,8 @@ interface StudioOpening3DProps {
 export function StudioOpening3D({
   logoUrl,
   useLiteMode,
+  soundEnabled,
+  onToggleSound,
   onFormRevealedChange,
   onJumpToOrder,
   onNavigateBoard,
@@ -180,8 +241,12 @@ export function StudioOpening3D({
   const wallLogoTexRef = useRef<THREE.CanvasTexture | null>(null);
   const requestRenderRef = useRef<(() => void) | null>(null);
 
-  const [soundEnabled, setSoundEnabled] = useState(false);
-  const soundEnabledRef = useRef(false);
+  const soundEnabledRef = useRef(soundEnabled);
+  const awaitingGestureUnmuteRef = useRef(false);
+
+  const [isMobileStage, setIsMobileStage] = useState<boolean>(() =>
+    detectIsMobileStage()
+  );
   const [ytUnavailable, setYtUnavailable] = useState(false);
   const [ytNeedsTap, setYtNeedsTap] = useState(false);
   const [handedOff, setHandedOff] = useState(false);
@@ -190,12 +255,98 @@ export function StudioOpening3D({
   const [scrollPct, setScrollPct] = useState(0);
   const [portalScreenEl, setPortalScreenEl] = useState<HTMLDivElement | null>(null);
 
+  // Monitora troca entre orientação vertical/celular e horizontal/desktop
+  useEffect(() => {
+    const checkStageMode = () => {
+      const mobile = detectIsMobileStage();
+      setIsMobileStage((prev) => (prev === mobile ? prev : mobile));
+    };
+    window.addEventListener('resize', checkStageMode);
+    return () => window.removeEventListener('resize', checkStageMode);
+  }, []);
+
+  // Inicializa o motor de áudio Web Audio já habilitado se soundEnabled estiver ativo na entrada
   useEffect(() => {
     const audio = new StudioOpeningAudio();
     audioRef.current = audio;
+    if (soundEnabledRef.current && !handedOffRef.current) {
+      audio.enableSound(true);
+    }
     return () => {
       audio.dispose();
       audioRef.current = null;
+    };
+  }, []);
+
+  // Sincroniza o estado de som com o player do YouTube e ambiência do estúdio
+  useEffect(() => {
+    const prev = soundEnabledRef.current;
+    soundEnabledRef.current = soundEnabled;
+
+    if (soundEnabled) {
+      if (!handedOffRef.current) {
+        audioRef.current?.enableSound(!prev);
+      }
+      try {
+        ytPlayerRef.current?.unMute?.();
+        ytPlayerRef.current?.setVolume?.(85);
+        if (!handedOffRef.current && !useLiteMode) {
+          ytPlayerRef.current?.playVideo?.();
+        }
+        setYtNeedsTap(false);
+      } catch {
+        // ignore
+      }
+    } else {
+      awaitingGestureUnmuteRef.current = false;
+      audioRef.current?.disableSound();
+      try {
+        ytPlayerRef.current?.mute?.();
+      } catch {
+        // ignore
+      }
+    }
+  }, [soundEnabled, useLiteMode]);
+
+  // Se o navegador suspender áudio na abertura fria do link, destrava no primeiro gesto sem bloquear o vídeo
+  useEffect(() => {
+    const unlockAudioOnFirstGesture = (ev: Event) => {
+      if (!soundEnabledRef.current) return;
+      if (
+        ev.target instanceof Element &&
+        ev.target.closest('[data-sound-toggle="true"]')
+      ) {
+        return;
+      }
+
+      if (!handedOffRef.current) {
+        audioRef.current?.resumeOnUserGestureIfEnabled();
+      }
+
+      if (awaitingGestureUnmuteRef.current && !handedOffRef.current) {
+        awaitingGestureUnmuteRef.current = false;
+        try {
+          ytPlayerRef.current?.unMute?.();
+          ytPlayerRef.current?.setVolume?.(85);
+          ytPlayerRef.current?.playVideo?.();
+          setYtNeedsTap(false);
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const opts: AddEventListenerOptions = { capture: true, passive: true };
+    window.addEventListener('pointerdown', unlockAudioOnFirstGesture, opts);
+    window.addEventListener('touchstart', unlockAudioOnFirstGesture, opts);
+    window.addEventListener('keydown', unlockAudioOnFirstGesture, opts);
+    window.addEventListener('wheel', unlockAudioOnFirstGesture, opts);
+
+    return () => {
+      window.removeEventListener('pointerdown', unlockAudioOnFirstGesture, opts);
+      window.removeEventListener('touchstart', unlockAudioOnFirstGesture, opts);
+      window.removeEventListener('keydown', unlockAudioOnFirstGesture, opts);
+      window.removeEventListener('wheel', unlockAudioOnFirstGesture, opts);
     };
   }, []);
 
@@ -232,32 +383,7 @@ export function StudioOpening3D({
     return () => {
       cancelled = true;
     };
-  }, [logoUrl]);
-
-  const handleToggleSound = useCallback(() => {
-    const next = !soundEnabledRef.current;
-    soundEnabledRef.current = next;
-    setSoundEnabled(next);
-
-    if (next) {
-      audioRef.current?.enableSound();
-      try {
-        ytPlayerRef.current?.unMute?.();
-        ytPlayerRef.current?.setVolume?.(70);
-        ytPlayerRef.current?.playVideo?.();
-        setYtNeedsTap(false);
-      } catch {
-        // ignore
-      }
-    } else {
-      audioRef.current?.disableSound();
-      try {
-        ytPlayerRef.current?.mute?.();
-      } catch {
-        // ignore
-      }
-    }
-  }, []);
+  }, [logoUrl, isMobileStage]);
 
   const handleSkipToForm = useCallback(() => {
     try {
@@ -266,27 +392,31 @@ export function StudioOpening3D({
       // ignore
     }
     audioRef.current?.stopAllImmediately();
-    soundEnabledRef.current = false;
-    setSoundEnabled(false);
     onJumpToOrder();
   }, [onJumpToOrder]);
 
   const handlePlayDirectOnTv = useCallback(() => {
     setYtNeedsTap(false);
+    awaitingGestureUnmuteRef.current = false;
     try {
+      if (soundEnabledRef.current) {
+        ytPlayerRef.current?.unMute?.();
+        ytPlayerRef.current?.setVolume?.(85);
+      }
       ytPlayerRef.current?.playVideo?.();
     } catch {
       // ignore
     }
   }, []);
 
-  // Monta o player oficial do YouTube preservando proporção 16:9 no vidro da TV
+  // Monta o player oficial do YouTube já iniciando com som ativado ao entrar no link
   useEffect(() => {
     const mountParent = useLiteMode ? liteYtMountRef.current : ytMountRef.current;
     if (!mountParent) return;
 
     let disposed = false;
-    let autoplayCheckTimer: number | null = null;
+    let unmutedCheckTimer: number | null = null;
+    let mutedFallbackTimer: number | null = null;
     setYtUnavailable(false);
     setYtNeedsTap(useLiteMode);
 
@@ -303,6 +433,8 @@ export function StudioOpening3D({
         return;
       }
 
+      const wantSoundAtStart = soundEnabledRef.current;
+
       try {
         const player = new window.YT.Player(playerHost, {
           videoId: YOUTUBE_VIDEO_ID,
@@ -310,7 +442,7 @@ export function StudioOpening3D({
           height: '100%',
           playerVars: {
             autoplay: useLiteMode ? 0 : 1,
-            mute: 1,
+            mute: wantSoundAtStart ? 0 : 1,
             controls: 1,
             rel: 0,
             playsinline: 1,
@@ -322,17 +454,48 @@ export function StudioOpening3D({
           events: {
             onReady: (ev: { target: YTPlayerInstance }) => {
               if (disposed) return;
-              ev.target.mute?.();
-              if (!useLiteMode && !handedOffRef.current) {
+              if (useLiteMode || handedOffRef.current) {
+                if (!soundEnabledRef.current) ev.target.mute?.();
+                return;
+              }
+
+              if (soundEnabledRef.current) {
+                ev.target.unMute?.();
+                ev.target.setVolume?.(85);
                 ev.target.playVideo?.();
-                autoplayCheckTimer = window.setTimeout(() => {
+
+                // Verifica se o navegador permitiu reprodução imediata com áudio ativo
+                unmutedCheckTimer = window.setTimeout(() => {
+                  if (disposed || handedOffRef.current) return;
+                  const st = ev.target.getPlayerState?.();
+                  if (st === 1 || st === 3) {
+                    awaitingGestureUnmuteRef.current = false;
+                    setYtNeedsTap(false);
+                    return;
+                  }
+                  // Caso a política de autoplay bloqueie áudio antes de toque, mantém o vídeo rodando e libera áudio no 1º gesto
+                  awaitingGestureUnmuteRef.current = true;
+                  ev.target.mute?.();
+                  ev.target.playVideo?.();
+
+                  mutedFallbackTimer = window.setTimeout(() => {
+                    if (disposed) return;
+                    const st2 = ev.target.getPlayerState?.();
+                    if (st2 !== 1 && st2 !== 3) {
+                      setYtNeedsTap(true);
+                    }
+                  }, 1100);
+                }, 850);
+              } else {
+                ev.target.mute?.();
+                ev.target.playVideo?.();
+                mutedFallbackTimer = window.setTimeout(() => {
                   if (disposed) return;
                   const st = ev.target.getPlayerState?.();
-                  // 1 = PLAYING, 3 = BUFFERING
                   if (st !== 1 && st !== 3) {
                     setYtNeedsTap(true);
                   }
-                }, 1600);
+                }, 1400);
               }
             },
             onStateChange: (ev: { data: number }) => {
@@ -355,7 +518,8 @@ export function StudioOpening3D({
 
     return () => {
       disposed = true;
-      if (autoplayCheckTimer) window.clearTimeout(autoplayCheckTimer);
+      if (unmutedCheckTimer) window.clearTimeout(unmutedCheckTimer);
+      if (mutedFallbackTimer) window.clearTimeout(mutedFallbackTimer);
       try {
         ytPlayerRef.current?.destroy?.();
       } catch {
@@ -365,7 +529,7 @@ export function StudioOpening3D({
     };
   }, [useLiteMode, portalScreenEl]);
 
-  // Cena 3D Multi-Plano Fotorrealista em Three.js r187
+  // Cena 3D Multi-Plano Fotorrealista em Three.js r187 (16:9 Desktop + 9:16 Smartphone Centralizado)
   useEffect(() => {
     if (useLiteMode) {
       setPortalScreenEl(null);
@@ -377,10 +541,15 @@ export function StudioOpening3D({
     const webglHost = webglLayerRef.current;
     if (!cssHost || !webglHost) return;
 
+    const stage: StageSpec = isMobileStage ? MOBILE_STAGE : DESKTOP_STAGE;
+    const domScreenPxH = Math.round(
+      DOM_SCREEN_PX_W * (stage.tvScreenH / stage.tvScreenW)
+    );
+
     const screenDom = document.createElement('div');
     screenDom.className = 'tv-screen-dom';
     screenDom.style.width = `${DOM_SCREEN_PX_W}px`;
-    screenDom.style.height = `${DOM_SCREEN_PX_H}px`;
+    screenDom.style.height = `${domScreenPxH}px`;
     setPortalScreenEl(screenDom);
 
     const disposables: Array<{ dispose: () => void }> = [];
@@ -403,7 +572,7 @@ export function StudioOpening3D({
     const width = webglHost.clientWidth || window.innerWidth;
     const height = webglHost.clientHeight || window.innerHeight;
 
-    const camera = new THREE.PerspectiveCamera(BASE_FOV, width / height, 0.06, 25);
+    const camera = new THREE.PerspectiveCamera(BASE_FOV, width / height, 0.05, 25);
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -425,8 +594,8 @@ export function StudioOpening3D({
     cssHost.appendChild(cssRenderer.domElement);
 
     const cssScreenObj = new CSS3DObject(screenDom);
-    cssScreenObj.position.set(TV_X, TV_Y, 0);
-    cssScreenObj.scale.setScalar(TV_SCREEN_W / DOM_SCREEN_PX_W);
+    cssScreenObj.position.set(stage.tvX, stage.tvY, 0);
+    cssScreenObj.scale.setScalar(stage.tvScreenW / DOM_SCREEN_PX_W);
     cssScene.add(cssScreenObj);
 
     const loader = new THREE.TextureLoader();
@@ -436,9 +605,9 @@ export function StudioOpening3D({
       updateSceneForScroll();
     };
 
-    // --- Camada 1: Estúdio ao Fundo (z = -0.95m, desloca mais devagar na rolagem) ---
+    // Camada 1: Estúdio ao fundo (z = -0.95m, desloca mais devagar na rolagem)
     const scaleBg = (Z_REF - Z_BG) / Z_REF;
-    const bgTex = trackTex(loader.load(assetUrl('/studio/studio-bg-stage.jpg'), onTexLoaded));
+    const bgTex = trackTex(loader.load(assetUrl(stage.bgUrl), onTexLoaded));
     bgTex.colorSpace = THREE.SRGBColorSpace;
     const bgMat = trackMat(
       new THREE.MeshBasicMaterial({
@@ -447,14 +616,14 @@ export function StudioOpening3D({
       })
     );
     const bgMesh = new THREE.Mesh(
-      trackGeo(new THREE.PlaneGeometry(PLANE_W * scaleBg, PLANE_H * scaleBg)),
+      trackGeo(new THREE.PlaneGeometry(stage.planeW * scaleBg, stage.bgPlaneH * scaleBg)),
       bgMat
     );
     bgMesh.position.set(0, 0, Z_BG);
     bgMesh.renderOrder = 1;
     scene.add(bgMesh);
 
-    // --- Camada 2: Identificação Física Dinâmica da IMTV na Parede Preta (z = -0.12m) ---
+    // Camada 2: Identificação física dinâmica da IMTV na parede preta (z = -0.12m)
     const scaleLogo = (Z_REF - Z_LOGO) / Z_REF;
     const wallLogoCanvas = document.createElement('canvas');
     wallLogoCanvas.width = 768;
@@ -485,28 +654,28 @@ export function StudioOpening3D({
       })
     );
     const wallLogoMesh = new THREE.Mesh(
-      trackGeo(new THREE.PlaneGeometry(LOGO_W * scaleLogo, LOGO_H * scaleLogo)),
+      trackGeo(new THREE.PlaneGeometry(stage.logoW * scaleLogo, stage.logoH * scaleLogo)),
       wallLogoMat
     );
-    wallLogoMesh.position.set(LOGO_X * scaleLogo, LOGO_Y * scaleLogo, Z_LOGO);
+    wallLogoMesh.position.set(stage.logoX * scaleLogo, stage.logoY * scaleLogo, Z_LOGO);
     wallLogoMesh.renderOrder = 2;
     scene.add(wallLogoMesh);
 
-    // --- Camada 3: Gabinete Profundo 3D + Frente da TV de Retroprojeção 50" (z = 0.00m) ---
+    // Camada 3: Gabinete profundo 3D + frente da TV de retroprojeção 50" (z = 0.00m)
     const deepCabinetMat = trackMat(
       new THREE.MeshBasicMaterial({
         color: 0x0b0b0d,
       })
     );
     const deepCabinetBox = new THREE.Mesh(
-      trackGeo(new THREE.BoxGeometry(1.04, 0.84, 0.34)),
+      trackGeo(new THREE.BoxGeometry(stage.cabinetW, stage.cabinetH, 0.32)),
       deepCabinetMat
     );
-    deepCabinetBox.position.set(TV_X, TV_Y - 0.14, -0.18);
+    deepCabinetBox.position.set(stage.tvX, stage.tvY - 0.1, -0.17);
     deepCabinetBox.renderOrder = 2;
     scene.add(deepCabinetBox);
 
-    // Janela Alpha=0 exata no vidro da TV (revela o player oficial do YouTube alinhado em perspectiva)
+    // Abertura Alpha=0 exata no vidro da TV (revela o player oficial do YouTube em perspectiva)
     const punchMat = trackMat(
       new THREE.MeshBasicMaterial({
         color: 0x000000,
@@ -519,14 +688,14 @@ export function StudioOpening3D({
       })
     );
     const screenAperture = new THREE.Mesh(
-      trackGeo(new THREE.PlaneGeometry(TV_SCREEN_W, TV_SCREEN_H)),
+      trackGeo(new THREE.PlaneGeometry(stage.tvScreenW, stage.tvScreenH)),
       punchMat
     );
-    screenAperture.position.set(TV_X, TV_Y, -0.001);
+    screenAperture.position.set(stage.tvX, stage.tvY, -0.001);
     screenAperture.renderOrder = 3;
     scene.add(screenAperture);
 
-    const tvTex = trackTex(loader.load(assetUrl('/studio/studio-mid-tv.webp'), onTexLoaded));
+    const tvTex = trackTex(loader.load(assetUrl(stage.tvUrl), onTexLoaded));
     tvTex.colorSpace = THREE.SRGBColorSpace;
     const tvMat = trackMat(
       new THREE.MeshBasicMaterial({
@@ -537,16 +706,16 @@ export function StudioOpening3D({
       })
     );
     const tvMesh = new THREE.Mesh(
-      trackGeo(new THREE.PlaneGeometry(PLANE_W, PLANE_H)),
+      trackGeo(new THREE.PlaneGeometry(stage.planeW, stage.planeH)),
       tvMat
     );
     tvMesh.position.set(0, 0, 0);
     tvMesh.renderOrder = 4;
     scene.add(tvMesh);
 
-    // --- Camada 4: Câmera de Estúdio sobre Tripé Próxima ao Visitante (z = +1.18m) ---
+    // Camada 4: Câmera de estúdio sobre tripé próxima ao visitante (z = +1.18m)
     const scaleFg = (Z_REF - Z_FG_TRIPOD) / Z_REF;
-    const fgTex = trackTex(loader.load(assetUrl('/studio/studio-fg-tripod.webp'), onTexLoaded));
+    const fgTex = trackTex(loader.load(assetUrl(stage.fgUrl), onTexLoaded));
     fgTex.colorSpace = THREE.SRGBColorSpace;
     const fgMat = trackMat(
       new THREE.MeshBasicMaterial({
@@ -557,14 +726,13 @@ export function StudioOpening3D({
       })
     );
     const fgTripodMesh = new THREE.Mesh(
-      trackGeo(new THREE.PlaneGeometry(PLANE_W * scaleFg, PLANE_H * scaleFg)),
+      trackGeo(new THREE.PlaneGeometry(stage.planeW * scaleFg, stage.fgPlaneH * scaleFg)),
       fgMat
     );
     fgTripodMesh.position.set(0, 0, Z_FG_TRIPOD);
     fgTripodMesh.renderOrder = 5;
     scene.add(fgTripodMesh);
 
-    // --- Matemática determinística de câmera vinculada à rolagem nativa ---
     const cornerTL = new THREE.Vector3();
     const cornerTR = new THREE.Vector3();
     const cornerBL = new THREE.Vector3();
@@ -577,19 +745,48 @@ export function StudioOpening3D({
       const vw = hostEl.clientWidth || window.innerWidth;
       const vh = hostEl.clientHeight || window.innerHeight;
       const aspect = vw / Math.max(1, vh);
-      const isPortrait = aspect < 1.0;
+      const stageAspect = stage.planeW / stage.planeH;
 
-      // Ajusta FOV para que em qualquer monitor wide o quadro inicial seja 100% preenchido (sem barras)
+      // Calcula FOV e ponto inicial para preencher 100% da tela e manter a TV centralizada em formatos menores
       let targetFov = BASE_FOV;
-      if (!isPortrait && aspect > 16 / 9) {
-        // Para telas ultrawide (> 16:9), reduz FOV vertical para que a largura da cena cubra 100% da janela
-        const neededTan = PLANE_W / (2 * Z_REF * aspect);
-        targetFov = THREE.MathUtils.radToDeg(2 * Math.atan(neededTan));
-      } else if (isPortrait) {
-        targetFov = 46;
+      let startX = 0.0;
+      let startY = 0.0;
+
+      if (stage.mode === 'mobile') {
+        if (aspect > stageAspect) {
+          // Telas verticais mais largas ou janelas quadradas (< 860px): preenche 100% da largura sem bordas
+          const neededTan = stage.planeW / (2 * Z_REF * aspect);
+          targetFov = THREE.MathUtils.radToDeg(2 * Math.atan(neededTan));
+          startX = stage.tvX * smoothstep(stageAspect, 1.0, aspect) * 0.45;
+          startY = stage.tvY * smoothstep(stageAspect, 1.0, aspect) * 0.45;
+        } else {
+          // Smartphones verticais (ex: 390x844, 360x800, 412x915): exibe câmera à esquerda, TV centralizada e NO AR à direita
+          const neededTan = (stage.planeW * 0.94) / (2 * Z_REF * aspect);
+          targetFov = THREE.MathUtils.radToDeg(2 * Math.atan(neededTan));
+          startX = stage.tvX * 0.52;
+          startY = 0.0;
+        }
+      } else {
+        if (aspect > stageAspect) {
+          // Monitores ultrawide (> 16:9)
+          const neededTan = stage.planeW / (2 * Z_REF * aspect);
+          targetFov = THREE.MathUtils.radToDeg(2 * Math.atan(neededTan));
+          startX = 0.0;
+        } else {
+          // Janelas intermediárias entre 1.05 e 16:9: desloca suavemente para manter a TV inteira e centralizada
+          targetFov = BASE_FOV;
+          startX = THREE.MathUtils.lerp(
+            stage.tvX * 0.92,
+            0.0,
+            smoothstep(1.05, stageAspect, aspect)
+          );
+        }
       }
 
-      if (Math.abs(camera.fov - targetFov) > 0.01 || Math.abs(camera.aspect - aspect) > 0.001) {
+      if (
+        Math.abs(camera.fov - targetFov) > 0.01 ||
+        Math.abs(camera.aspect - aspect) > 0.001
+      ) {
         camera.fov = targetFov;
         camera.aspect = aspect;
         camera.updateProjectionMatrix();
@@ -605,47 +802,44 @@ export function StudioOpening3D({
 
       // Distância crítica exata onde os 4 cantos internos do vidro da TV saem pelas 4 bordas da janela
       const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5));
-      const zExitVert = (TV_SCREEN_H * 0.5) / tanHalfFov;
-      const zExitHoriz = (TV_SCREEN_W * 0.5) / (tanHalfFov * aspect);
+      const zExitVert = (stage.tvScreenH * 0.5) / tanHalfFov;
+      const zExitHoriz = (stage.tvScreenW * 0.5) / (tanHalfFov * aspect);
       const zFourBorderExit = Math.min(zExitVert, zExitHoriz);
       const zEnd = zFourBorderExit * 0.84;
 
-      const startX = isPortrait ? 0.54 : 0.0;
-      const startY = isPortrait ? 0.05 : 0.0;
-      const startZ = isPortrait ? 2.90 : Z_REF;
-      const midZ = Math.max(1.28, zFourBorderExit * 1.62);
+      const startZ = Z_REF;
+      const midZ = Math.max(
+        stage.mode === 'mobile' ? 0.92 : 1.28,
+        zFourBorderExit * 1.62
+      );
 
-      // Fase 1 (0 -> 0.56): Tripé passa pela borda esquerda, fundo desloca mais devagar,
-      // câmera alinha perpendicularmente ao centro exato do vidro da TV (TV_X, TV_Y)
       let camX: number;
       let camY: number;
       let camZ: number;
 
       if (rawProgress <= 0.56) {
         const tAlign = smoothstep(0, 0.56, rawProgress);
-        camX = THREE.MathUtils.lerp(startX, TV_X, tAlign);
-        camY = THREE.MathUtils.lerp(startY, TV_Y, tAlign);
+        camX = THREE.MathUtils.lerp(startX, stage.tvX, tAlign);
+        camY = THREE.MathUtils.lerp(startY, stage.tvY, tAlign);
         camZ = THREE.MathUtils.lerp(startZ, midZ, tAlign);
       } else {
-        // Fase 2 (0.56 -> 0.96): Avanço 100% perpendicular ao vidro até a moldura sair pelas 4 bordas
         const tPush = smoothstep(0.56, 0.95, rawProgress);
-        camX = TV_X;
-        camY = TV_Y;
+        camX = stage.tvX;
+        camY = stage.tvY;
         camZ = THREE.MathUtils.lerp(midZ, zEnd, tPush);
       }
 
-      // Câmera sempre olha perpendicularmente ao plano z=0 (mantendo linhas verticais perfeitas e zero distorção)
       camera.position.set(camX, camY, camZ);
       camera.lookAt(camX, camY, 0);
       camera.updateMatrixWorld();
 
       // Checagem geométrica real dos 4 cantos da moldura interna da TV
-      const halfW = TV_SCREEN_W * 0.5;
-      const halfH = TV_SCREEN_H * 0.5;
-      cornerTL.set(TV_X - halfW, TV_Y + halfH, 0).project(camera);
-      cornerTR.set(TV_X + halfW, TV_Y + halfH, 0).project(camera);
-      cornerBL.set(TV_X - halfW, TV_Y - halfH, 0).project(camera);
-      cornerBR.set(TV_X + halfW, TV_Y - halfH, 0).project(camera);
+      const halfW = stage.tvScreenW * 0.5;
+      const halfH = stage.tvScreenH * 0.5;
+      cornerTL.set(stage.tvX - halfW, stage.tvY + halfH, 0).project(camera);
+      cornerTR.set(stage.tvX + halfW, stage.tvY + halfH, 0).project(camera);
+      cornerBL.set(stage.tvX - halfW, stage.tvY - halfH, 0).project(camera);
+      cornerBR.set(stage.tvX + halfW, stage.tvY - halfH, 0).project(camera);
 
       const minX = Math.min(cornerTL.x, cornerBL.x);
       const maxX = Math.max(cornerTR.x, cornerBR.x);
@@ -722,16 +916,17 @@ export function StudioOpening3D({
       }
       renderer.dispose();
     };
-  }, [useLiteMode, onFormRevealedChange]);
+  }, [useLiteMode, isMobileStage, onFormRevealedChange]);
 
   // --- Vista Leve da TV (Reduced Motion ou aparelhos de menor desempenho) ---
   if (useLiteMode) {
+    const liteBg = isMobileStage ? '/studio/studio-mobile-bg.jpg' : '/studio/studio-bg-stage.jpg';
     return (
       <header
         className="studio-lite-hero"
         aria-label="Estúdio IMTV 2027"
         style={{
-          backgroundImage: `linear-gradient(180deg, rgba(6, 8, 10, 0.52) 0%, #06080a 100%), url("${assetUrl('/studio/studio-bg-stage.jpg')}")`,
+          backgroundImage: `linear-gradient(180deg, rgba(6, 8, 10, 0.52) 0%, #06080a 100%), url("${assetUrl(liteBg)}")`,
         }}
       >
         <div className="studio-lite-inner">
@@ -741,10 +936,13 @@ export function StudioOpening3D({
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={handleToggleSound}
+                onClick={onToggleSound}
                 aria-pressed={soundEnabled}
+                data-imtv-cursor-nativo=""
+                data-sound-toggle="true"
+                data-testid="toggle-sound-btn"
               >
-                {soundEnabled ? 'Desativar som' : 'Ativar som'}
+                {soundEnabled ? 'Silenciar som' : 'Ativar som'}
               </button>
               <button
                 type="button"
@@ -816,13 +1014,13 @@ export function StudioOpening3D({
       ref={trackRef}
       className="studio-scroll-track"
       data-scroll-pct={scrollPct}
+      data-stage-mode={isMobileStage ? 'mobile' : 'desktop'}
       data-handed-off={handedOff ? 'true' : 'false'}
     >
       <div
         className={`studio-sticky-stage ${handedOff ? 'is-handed-off' : ''}`}
         aria-label="Abertura Estúdio de Gravação IMTV 3D"
       >
-        {/* Camada CSS3D: Player oficial do YouTube encaixado no vidro da TV de 50" */}
         <div ref={cssLayerRef} className="studio-css3d-layer" />
 
         {portalScreenEl &&
@@ -870,23 +1068,23 @@ export function StudioOpening3D({
             portalScreenEl
           )}
 
-        {/* Camada WebGL Three.js r187 (tripé em 1º plano, TV 50", logo IMTV dinâmico e estúdio chroma/NO AR) */}
         <div ref={webglLayerRef} className="studio-webgl-layer" />
 
-        {/* Flash curto de sintonia na transição exata para o formulário */}
         <div className={`tv-tuning-flash ${tuningFlash ? 'is-active' : ''}`} aria-hidden="true" />
 
-        {/* Barra superior centralizada e clean desde o primeiro quadro */}
         <div className="studio-hud">
           <div className="studio-hud-top">
             <div className="studio-hud-pillbar">
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                onClick={handleToggleSound}
+                onClick={onToggleSound}
                 aria-pressed={soundEnabled}
+                data-imtv-cursor-nativo=""
+                data-sound-toggle="true"
+                data-testid="toggle-sound-btn"
               >
-                {soundEnabled ? 'Desativar som' : 'Ativar som'}
+                {soundEnabled ? 'Silenciar som' : 'Ativar som'}
               </button>
               <button
                 type="button"

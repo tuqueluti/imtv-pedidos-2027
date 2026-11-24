@@ -44,6 +44,8 @@ function formatDateTimePtBr(iso: string): string {
 interface InternalPipefyBoardProps {
   logoUrl: string | null;
   recipientTeamName: string;
+  soundEnabled: boolean;
+  onToggleSound: () => void;
   onPublicConfigChanged: (cfg: PublicPortalConfig) => void;
   onNavigatePublic: () => void;
 }
@@ -51,6 +53,8 @@ interface InternalPipefyBoardProps {
 export function InternalPipefyBoard({
   logoUrl,
   recipientTeamName,
+  soundEnabled,
+  onToggleSound,
   onPublicConfigChanged,
   onNavigatePublic,
 }: InternalPipefyBoardProps) {
@@ -483,6 +487,17 @@ export function InternalPipefyBoard({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <span className="pipe-tag">{user.displayName}</span>
+
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onToggleSound}
+              aria-pressed={soundEnabled}
+              data-imtv-cursor-nativo=""
+              data-sound-toggle="true"
+            >
+              {soundEnabled ? 'Silenciar som' : 'Ativar som'}
+            </button>
 
             {user.role === 'admin' && (
               <button
