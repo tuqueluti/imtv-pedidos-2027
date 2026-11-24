@@ -130,9 +130,21 @@ async function runE2E() {
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(950);
+    await page.waitForTimeout(820);
 
-    // 1a. Som já deve iniciar ativado ao entrar no link
+    // 1a. Confere que a abertura generativa (códigos, cursores e bits) está ativa construindo a hero page
+    assert.equal(await page.getByTestId('hero-generative-intro').count(), 1);
+    await page.screenshot({ path: path.join(shotsDir, '00a-desktop-hero-generativa-construindo.png') });
+
+    // 1b. Captura a fase da varredura luminosa (scanline) revelando o estúdio 3D real por cima do blueprint
+    await page.waitForTimeout(1280);
+    await page.screenshot({ path: path.join(shotsDir, '00b-desktop-hero-scanline-revelando.png') });
+
+    // Aguarda encerramento completo e desmontagem limpa da camada generativa (~2.9s totais)
+    await page.waitForTimeout(1150);
+    assert.equal(await page.getByTestId('hero-generative-intro').count(), 0);
+
+    // Som já deve iniciar ativado ao entrar no link
     const soundBtn = page.getByTestId('toggle-sound-btn');
     await soundBtn.waitFor({ state: 'visible' });
     assert.equal(await soundBtn.getAttribute('aria-pressed'), 'true');
@@ -461,7 +473,10 @@ async function runE2E() {
     await mPage.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await mPage.waitForTimeout(450);
     await mPage.setViewportSize({ width: 390, height: 844 });
-    await mPage.waitForTimeout(650);
+    await mPage.waitForTimeout(500);
+    await mPage.screenshot({ path: path.join(shotsDir, '00c-mobile-hero-generativa.png') });
+    await mPage.waitForTimeout(2250);
+    assert.equal(await mPage.getByTestId('hero-generative-intro').count(), 0);
 
     // Verifica no celular (390x844) que o estúdio vertical está ativo, com som ligado e TV + player 100% encaixados sem deslocamento!
     assert.equal(await mPage.locator('.studio-scroll-track').getAttribute('data-stage-mode'), 'mobile');

@@ -4,6 +4,7 @@ import { StudioOpeningAudio } from '../audio/studioAudio.ts';
 import { assetUrl } from '../api/clientApi.ts';
 import { computeMusicLoopVolume } from '../../shared/domain.ts';
 import { ImtvLogo } from './ImtvLogo.tsx';
+import { HeroGenerativeIntro } from './HeroGenerativeIntro.tsx';
 
 const YOUTUBE_VIDEO_ID = 'iTKp3kyNw4c';
 const YOUTUBE_WATCH_URL = `https://www.youtube.com/watch?v=${YOUTUBE_VIDEO_ID}`;
@@ -256,6 +257,7 @@ export function StudioOpening3D({
   const [ytNeedsTap, setYtNeedsTap] = useState(false);
   const [handedOff, setHandedOff] = useState(false);
   const handedOffRef = useRef(false);
+  const [introFastFinish, setIntroFastFinish] = useState(false);
   const [tuningFlash, setTuningFlash] = useState(false);
   const [scrollPct, setScrollPct] = useState(0);
 
@@ -445,6 +447,7 @@ export function StudioOpening3D({
   }, [advanceMusicLoop]);
 
   const handleSkipToForm = useCallback(() => {
+    setIntroFastFinish(true);
     awaitingGestureUnmuteRef.current = false;
     try {
       const targetVol = computeMusicLoopVolume(loopCountRef.current);
@@ -1209,6 +1212,11 @@ export function StudioOpening3D({
             </div>
           </div>
         </div>
+
+        <HeroGenerativeIntro
+          skipImmediate={useLiteMode}
+          fastFinish={handedOff || introFastFinish}
+        />
       </div>
     </div>
   );
