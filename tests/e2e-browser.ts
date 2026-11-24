@@ -198,6 +198,26 @@ async function runE2E() {
       'Qual vídeo sua unidade precisa?'
     );
 
+    // Verifica que a música segue ativa no formulário (1ª execução em 100% = 0 dB) e reduz -10 dB a cada loop (32 -> 10 -> 3 -> 1)
+    assert.equal(await page.locator('.studio-scroll-track').getAttribute('data-music-loop'), '0');
+    assert.equal(await page.locator('.studio-scroll-track').getAttribute('data-music-volume'), '100');
+
+    const loopSteps = await page.evaluate(() => {
+      const sim = (window as unknown as {
+        __IMTV_SIMULATE_LOOP_END__?: () => { loop: number; volume: number };
+      }).__IMTV_SIMULATE_LOOP_END__;
+      if (!sim) return [];
+      return [sim(), sim(), sim(), sim()];
+    });
+    assert.deepEqual(loopSteps, [
+      { loop: 1, volume: 32 },
+      { loop: 2, volume: 10 },
+      { loop: 3, volume: 3 },
+      { loop: 4, volume: 1 },
+    ]);
+    assert.equal(await page.locator('.studio-scroll-track').getAttribute('data-music-loop'), '4');
+    assert.equal(await page.locator('.studio-scroll-track').getAttribute('data-music-volume'), '1');
+
     // Verifica que dentro de "Quem recebe" está o logo oficial da IMTV (substituindo o ícone de câmera)
     await page.locator('.recipient-logo-img').waitFor({ state: 'visible' });
     await page.screenshot({ path: path.join(shotsDir, '03-desktop-formulario-novo-layout.png') });

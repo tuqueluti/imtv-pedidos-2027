@@ -7,6 +7,7 @@ import {
 } from 'three/addons/renderers/CSS3DRenderer.js';
 import { StudioOpeningAudio } from '../audio/studioAudio.ts';
 import { assetUrl } from '../api/clientApi.ts';
+import { computeMusicLoopVolume } from '../../shared/domain.ts';
 import { ImtvLogo } from './ImtvLogo.tsx';
 
 const YOUTUBE_VIDEO_ID = 'iTKp3kyNw4c';
@@ -109,10 +110,14 @@ function detectIsMobileStage(): boolean {
 interface YTPlayerInstance {
   playVideo?: () => void;
   pauseVideo?: () => void;
+  seekTo?: (seconds: number, allowSeekAhead?: boolean) => void;
   mute?: () => void;
   unMute?: () => void;
   isMuted?: () => boolean;
   setVolume?: (v: number) => void;
+  getVolume?: () => number;
+  getCurrentTime?: () => number;
+  getDuration?: () => number;
   getPlayerState?: () => number;
   destroy?: () => void;
 }
@@ -243,7 +248,12 @@ export function StudioOpening3D({
 
   const soundEnabledRef = useRef(soundEnabled);
   const awaitingGestureUnmuteRef = useRef(false);
+  const loopCountRef = useRef(0);
+  const lastLoopAdvanceAtRef = useRef(0);
+  const maxSeenTimeRef = useRef(0);
 
+  const [musicLoopCount, setMusicLoopCount] = useState(0);
+  const [musicVolumePct, setMusicVolumePct] = useState(100);
   const [isMobileStage, setIsMobileStage] = useState<boolean>(() =>
     detectIsMobileStage()
   );
@@ -278,7 +288,7 @@ export function StudioOpening3D({
     };
   }, []);
 
-  // Sincroniza o estado de som com o player do YouTube e ambiência do estúdio
+  // Sincroniza o estado de som com o player do YouTube (mantendo a música em loop no formulário) e ambiência do estúdio
   useEffect(() => {
     const prev = soundEnabledRef.current;
     soundEnabledRef.current = soundEnabled;
@@ -288,11 +298,10 @@ export function StudioOpening3D({
         audioRef.current?.enableSound(!prev);
       }
       try {
+        const targetVol = computeMusicLoopVolume(loopCountRef.current);
+        ytPlayerRef.current?.setVolume?.(targetVol);
         ytPlayerRef.current?.unMute?.();
-        ytPlayerRef.current?.setVolume?.(85);
-        if (!handedOffRef.current && !useLiteMode) {
-          ytPlayerRef.current?.playVideo?.();
-        }
+        ytPlayerRef.current?.playVideo?.();
         setYtNeedsTap(false);
       } catch {
         // ignore
@@ -306,9 +315,9 @@ export function StudioOpening3D({
         // ignore
       }
     }
-  }, [soundEnabled, useLiteMode]);
+  }, [soundEnabled]);
 
-  // Se o navegador suspender áudio na abertura fria do link, destrava no primeiro gesto sem bloquear o vídeo
+  // Se o navegador suspender áudio na abertura fria do link, destrava no primeiro gesto (no estúdio ou já no formulário)
   useEffect(() => {
     const unlockAudioOnFirstGesture = (ev: Event) => {
       if (!soundEnabledRef.current) return;
@@ -323,11 +332,12 @@ export function StudioOpening3D({
         audioRef.current?.resumeOnUserGestureIfEnabled();
       }
 
-      if (awaitingGestureUnmuteRef.current && !handedOffRef.current) {
+      if (awaitingGestureUnmuteRef.current) {
         awaitingGestureUnmuteRef.current = false;
         try {
+          const targetVol = computeMusicLoopVolume(loopCountRef.current);
+          ytPlayerRef.current?.setVolume?.(targetVol);
           ytPlayerRef.current?.unMute?.();
-          ytPlayerRef.current?.setVolume?.(85);
           ytPlayerRef.current?.playVideo?.();
           setYtNeedsTap(false);
         } catch {
@@ -385,9 +395,70 @@ export function StudioOpening3D({
     };
   }, [logoUrl, isMobileStage]);
 
+  const advanceMusicLoop = useCallback(
+    (
+      player: YTPlayerInstance | null,
+      restartPlayback: boolean,
+      bypassDebounce = false
+    ) => {
+      const now = performance.now();
+      if (!bypassDebounce && now - lastLoopAdvanceAtRef.current < 2500) {
+        return;
+      }
+      lastLoopAdvanceAtRef.current = now;
+      maxSeenTimeRef.current = 0;
+
+      const nextLoop = loopCountRef.current + 1;
+      loopCountRef.current = nextLoop;
+      const nextVol = computeMusicLoopVolume(nextLoop);
+      setMusicLoopCount(nextLoop);
+      setMusicVolumePct(nextVol);
+
+      if (!player) return;
+      try {
+        player.setVolume?.(nextVol);
+        if (soundEnabledRef.current) {
+          player.unMute?.();
+        } else {
+          player.mute?.();
+        }
+        if (restartPlayback) {
+          player.seekTo?.(0, true);
+          player.playVideo?.();
+        }
+      } catch {
+        // ignore
+      }
+    },
+    []
+  );
+
+  // Hook determinístico para verificação E2E da curva de -10 dB a cada loop
+  useEffect(() => {
+    const win = window as unknown as {
+      __IMTV_SIMULATE_LOOP_END__?: () => { loop: number; volume: number };
+    };
+    win.__IMTV_SIMULATE_LOOP_END__ = () => {
+      advanceMusicLoop(ytPlayerRef.current, true, true);
+      return {
+        loop: loopCountRef.current,
+        volume: computeMusicLoopVolume(loopCountRef.current),
+      };
+    };
+    return () => {
+      delete win.__IMTV_SIMULATE_LOOP_END__;
+    };
+  }, [advanceMusicLoop]);
+
   const handleSkipToForm = useCallback(() => {
+    awaitingGestureUnmuteRef.current = false;
     try {
-      ytPlayerRef.current?.pauseVideo?.();
+      const targetVol = computeMusicLoopVolume(loopCountRef.current);
+      ytPlayerRef.current?.setVolume?.(targetVol);
+      if (soundEnabledRef.current) {
+        ytPlayerRef.current?.unMute?.();
+        ytPlayerRef.current?.playVideo?.();
+      }
     } catch {
       // ignore
     }
@@ -399,9 +470,10 @@ export function StudioOpening3D({
     setYtNeedsTap(false);
     awaitingGestureUnmuteRef.current = false;
     try {
+      const targetVol = computeMusicLoopVolume(loopCountRef.current);
+      ytPlayerRef.current?.setVolume?.(targetVol);
       if (soundEnabledRef.current) {
         ytPlayerRef.current?.unMute?.();
-        ytPlayerRef.current?.setVolume?.(85);
       }
       ytPlayerRef.current?.playVideo?.();
     } catch {
@@ -409,7 +481,7 @@ export function StudioOpening3D({
     }
   }, []);
 
-  // Monta o player oficial do YouTube já iniciando com som ativado ao entrar no link
+  // Monta o player oficial do YouTube com som ativo na entrada e loop contínuo (-10 dB por repetição)
   useEffect(() => {
     const mountParent = useLiteMode ? liteYtMountRef.current : ytMountRef.current;
     if (!mountParent) return;
@@ -417,8 +489,9 @@ export function StudioOpening3D({
     let disposed = false;
     let unmutedCheckTimer: number | null = null;
     let mutedFallbackTimer: number | null = null;
+    let loopMonitorTimer: number | null = null;
     setYtUnavailable(false);
-    setYtNeedsTap(useLiteMode);
+    setYtNeedsTap(false);
 
     const playerHost = document.createElement('div');
     playerHost.style.width = '100%';
@@ -441,39 +514,34 @@ export function StudioOpening3D({
           width: '100%',
           height: '100%',
           playerVars: {
-            autoplay: useLiteMode ? 0 : 1,
+            autoplay: 1,
             mute: wantSoundAtStart ? 0 : 1,
             controls: 1,
             rel: 0,
             playsinline: 1,
             modestbranding: 1,
-            loop: 1,
-            playlist: YOUTUBE_VIDEO_ID,
+            loop: 0,
             origin: window.location.origin,
           },
           events: {
             onReady: (ev: { target: YTPlayerInstance }) => {
               if (disposed) return;
-              if (useLiteMode || handedOffRef.current) {
-                if (!soundEnabledRef.current) ev.target.mute?.();
-                return;
-              }
+              const initialVol = computeMusicLoopVolume(loopCountRef.current);
+              setMusicVolumePct(initialVol);
 
               if (soundEnabledRef.current) {
+                ev.target.setVolume?.(initialVol);
                 ev.target.unMute?.();
-                ev.target.setVolume?.(85);
                 ev.target.playVideo?.();
 
-                // Verifica se o navegador permitiu reprodução imediata com áudio ativo
                 unmutedCheckTimer = window.setTimeout(() => {
-                  if (disposed || handedOffRef.current) return;
+                  if (disposed) return;
                   const st = ev.target.getPlayerState?.();
                   if (st === 1 || st === 3) {
                     awaitingGestureUnmuteRef.current = false;
                     setYtNeedsTap(false);
                     return;
                   }
-                  // Caso a política de autoplay bloqueie áudio antes de toque, mantém o vídeo rodando e libera áudio no 1º gesto
                   awaitingGestureUnmuteRef.current = true;
                   ev.target.mute?.();
                   ev.target.playVideo?.();
@@ -481,27 +549,58 @@ export function StudioOpening3D({
                   mutedFallbackTimer = window.setTimeout(() => {
                     if (disposed) return;
                     const st2 = ev.target.getPlayerState?.();
-                    if (st2 !== 1 && st2 !== 3) {
+                    if (st2 !== 1 && st2 !== 3 && !handedOffRef.current) {
                       setYtNeedsTap(true);
                     }
                   }, 1100);
                 }, 850);
               } else {
+                ev.target.setVolume?.(initialVol);
                 ev.target.mute?.();
                 ev.target.playVideo?.();
                 mutedFallbackTimer = window.setTimeout(() => {
                   if (disposed) return;
                   const st = ev.target.getPlayerState?.();
-                  if (st !== 1 && st !== 3) {
+                  if (st !== 1 && st !== 3 && !handedOffRef.current) {
                     setYtNeedsTap(true);
                   }
                 }, 1400);
               }
+
+              // Monitora fim ou retorno ao início do vídeo para garantir loop contínuo com -10 dB a cada repetição
+              loopMonitorTimer = window.setInterval(() => {
+                if (disposed) return;
+                try {
+                  const st = ev.target.getPlayerState?.();
+                  if (st === 0) {
+                    advanceMusicLoop(ev.target, true);
+                    return;
+                  }
+                  const cur = ev.target.getCurrentTime?.();
+                  const dur = ev.target.getDuration?.();
+                  if (
+                    typeof cur === 'number' &&
+                    typeof dur === 'number' &&
+                    dur > 5
+                  ) {
+                    if (maxSeenTimeRef.current > dur - 2.5 && cur < 1.5) {
+                      advanceMusicLoop(ev.target, false);
+                      maxSeenTimeRef.current = cur;
+                    } else if (cur > maxSeenTimeRef.current) {
+                      maxSeenTimeRef.current = cur;
+                    }
+                  }
+                } catch {
+                  // ignore
+                }
+              }, 400);
             },
-            onStateChange: (ev: { data: number }) => {
+            onStateChange: (ev: { data: number; target: YTPlayerInstance }) => {
               if (disposed) return;
               if (ev.data === 1 || ev.data === 3) {
                 setYtNeedsTap(false);
+              } else if (ev.data === 0) {
+                advanceMusicLoop(ev.target, true);
               }
             },
             onError: () => {
@@ -520,6 +619,7 @@ export function StudioOpening3D({
       disposed = true;
       if (unmutedCheckTimer) window.clearTimeout(unmutedCheckTimer);
       if (mutedFallbackTimer) window.clearTimeout(mutedFallbackTimer);
+      if (loopMonitorTimer) window.clearInterval(loopMonitorTimer);
       try {
         ytPlayerRef.current?.destroy?.();
       } catch {
@@ -527,7 +627,7 @@ export function StudioOpening3D({
       }
       ytPlayerRef.current = null;
     };
-  }, [useLiteMode, portalScreenEl]);
+  }, [useLiteMode, portalScreenEl, advanceMusicLoop]);
 
   // Cena 3D Multi-Plano Fotorrealista em Three.js r187 (16:9 Desktop + 9:16 Smartphone Centralizado)
   useEffect(() => {
@@ -854,12 +954,7 @@ export function StudioOpening3D({
         setHandedOff(true);
         onFormRevealedChange(true);
 
-        try {
-          ytPlayerRef.current?.pauseVideo?.();
-        } catch {
-          // ignore
-        }
-
+        // Encerra apenas a ambiência sintetizada da sala 3D; a música da TV continua tocando em loop no formulário
         audioRef.current?.playTuningTransitionAndTerminate();
         setTuningFlash(true);
         if (flashTimer) window.clearTimeout(flashTimer);
@@ -925,6 +1020,8 @@ export function StudioOpening3D({
       <header
         className="studio-lite-hero"
         aria-label="Estúdio IMTV 2027"
+        data-music-loop={musicLoopCount}
+        data-music-volume={musicVolumePct}
         style={{
           backgroundImage: `linear-gradient(180deg, rgba(6, 8, 10, 0.52) 0%, #06080a 100%), url("${assetUrl(liteBg)}")`,
         }}
@@ -1016,6 +1113,8 @@ export function StudioOpening3D({
       data-scroll-pct={scrollPct}
       data-stage-mode={isMobileStage ? 'mobile' : 'desktop'}
       data-handed-off={handedOff ? 'true' : 'false'}
+      data-music-loop={musicLoopCount}
+      data-music-volume={musicVolumePct}
     >
       <div
         className={`studio-sticky-stage ${handedOff ? 'is-handed-off' : ''}`}

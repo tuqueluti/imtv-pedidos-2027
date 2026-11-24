@@ -7,6 +7,7 @@ import {
   BOARD_COLUMNS,
   buildWhatsAppMessage,
   buildWhatsAppUrl,
+  computeMusicLoopVolume,
   parseAndValidateWhatsApp,
 } from '../shared/domain.ts';
 
@@ -70,6 +71,14 @@ test('Validação de WhatsApp aceita espaços, parênteses, hífen e código de 
     number: '123',
   });
   assert.equal(bad.valid, false);
+
+  // Curva de -10 dB a cada loop da música (1ª vez = 0 dB = 100; 2ª = -10 dB = 32; 3ª = -20 dB = 10; 4ª = -30 dB = 3; 5ª+ = 1)
+  assert.equal(computeMusicLoopVolume(0), 100);
+  assert.equal(computeMusicLoopVolume(1), 32);
+  assert.equal(computeMusicLoopVolume(2), 10);
+  assert.equal(computeMusicLoopVolume(3), 3);
+  assert.equal(computeMusicLoopVolume(4), 1);
+  assert.equal(computeMusicLoopVolume(5), 1);
 });
 
 test('Isolamento público, idempotência contra clique duplo e repetição isolada de e-mail', async () => {

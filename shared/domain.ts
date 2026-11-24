@@ -377,3 +377,19 @@ export function buildWhatsAppUrl(params: {
   const message = buildWhatsAppMessage(params);
   return `https://wa.me/${digits}?text=${encodeURIComponent(message)}`;
 }
+
+/**
+ * Calcula o volume linear (0..100) da música em loop aplicando -10 dB a cada nova repetição:
+ * - 1ª execução (loopIndex = 0):   0 dB -> 100
+ * - 2ª execução (loopIndex = 1): -10 dB ->  32 (100 * 10^(-10/20))
+ * - 3ª execução (loopIndex = 2): -20 dB ->  10 (100 * 10^(-20/20))
+ * - 4ª execução (loopIndex = 3): -30 dB ->   3 (100 * 10^(-30/20))
+ * - 5ª+ execução (loopIndex >= 4): -40 dB ->  1 (piso mínimo audível para loop contínuo)
+ */
+export function computeMusicLoopVolume(loopIndex: number): number {
+  const safeLoop = Math.max(0, Math.floor(loopIndex));
+  if (safeLoop === 0) return 100;
+  const dbAttenuation = -10 * safeLoop;
+  const linearGain = Math.pow(10, dbAttenuation / 20);
+  return Math.max(1, Math.min(100, Math.round(100 * linearGain)));
+}
