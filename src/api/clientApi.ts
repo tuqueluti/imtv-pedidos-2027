@@ -61,6 +61,9 @@ if (typeof window !== 'undefined') {
   }
 }
 
+export const DEFAULT_CLOUD_API_BASE_URL =
+  'https://bojdgepoxquhgqvtyhoe.supabase.co/functions/v1/imtv-api';
+
 export function getConfiguredApiBaseUrl(): string {
   const envUrl = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
   if (envUrl) return envUrl;
@@ -72,6 +75,9 @@ export function getConfiguredApiBaseUrl(): string {
       if (saved) return saved;
     } catch {
       // ignore
+    }
+    if (window.location.hostname.endsWith('.github.io')) {
+      return DEFAULT_CLOUD_API_BASE_URL;
     }
   }
   return '';
@@ -398,6 +404,21 @@ function handleStaticApi(pathname: string, urlObj: URL, init?: RequestInit): Res
     if (!order) return staticJsonResponse(404, { ok: false, error: 'Não encontrado.' });
     const events = db.events.filter((ev) => ev.orderId === id);
     return staticJsonResponse(200, { order, events });
+  }
+
+  if (detailMatch && method === 'DELETE') {
+    if (currentUser.role !== 'admin') {
+      return staticJsonResponse(403, { ok: false, error: 'Apenas administradores podem excluir.' });
+    }
+    const id = Number(detailMatch[1]);
+    db.orders = db.orders.filter((o) => o.id !== id);
+    db.events = db.events.filter((ev) => ev.orderId !== id);
+    if (db.orders.length === 0) {
+      db.nextId = 1;
+    }
+    saveStaticDb(db);
+    notifyOrdersChanged();
+    return staticJsonResponse(200, { ok: true, deletedId: id });
   }
 
   const moveMatch = pathname.match(/^\/api\/board\/orders\/(\d+)\/move$/);

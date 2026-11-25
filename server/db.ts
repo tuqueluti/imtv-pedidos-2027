@@ -1273,4 +1273,18 @@ export class PortalStore {
 
     return this.getOrderById(orderId)!;
   }
+
+  public deleteOrderById(orderId: number): void {
+    const existing = this.getOrderById(orderId);
+    if (!existing) {
+      throw new DomainValidationError('Pedido não encontrado.');
+    }
+    this.db.prepare('DELETE FROM video_orders WHERE id = ?').run(orderId);
+    const rem = this.db
+      .prepare('SELECT COUNT(*) as total FROM video_orders')
+      .get() as { total: number };
+    if (rem.total === 0) {
+      this.db.exec("DELETE FROM sqlite_sequence WHERE name IN ('video_orders', 'order_events');");
+    }
+  }
 }

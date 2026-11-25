@@ -94,8 +94,10 @@ export function InternalPipefyBoard({
   const [confirmingWa, setConfirmingWa] = useState(false);
   const [deliveryErr, setDeliveryErr] = useState<string | null>(null);
 
-  // Admin modal
+  // Admin modal & exclusão segura
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [deletingOrder, setDeletingOrder] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -346,6 +348,32 @@ export function InternalPipefyBoard({
       setDeliveryErr('Falha ao confirmar envio.');
     } finally {
       setConfirmingWa(false);
+    }
+  };
+
+  const handleDeleteOrder = async (orderId: number) => {
+    if (deletingOrder) return;
+    setDeletingOrder(true);
+    setBoardError(null);
+    try {
+      const resp = await portalFetch(`/api/board/orders/${orderId}`, {
+        method: 'DELETE',
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        setBoardError(data.error || 'Não foi possível excluir o pedido.');
+      } else {
+        setConfirmDeleteId(null);
+        setOrders((prev) => {
+          const remaining = prev.filter((o) => o.id !== orderId);
+          setSelectedOrderId(remaining[0]?.id ?? null);
+          return remaining;
+        });
+      }
+    } catch {
+      setBoardError('Falha ao excluir o pedido.');
+    } finally {
+      setDeletingOrder(false);
     }
   };
 
@@ -890,25 +918,83 @@ export function InternalPipefyBoard({
                 )}
               </div>
 
-              <div>
-                {selectedCard.materialsDriveUrl ? (
-                  <a
-                    href={selectedCard.materialsDriveUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="drive-link-row"
-                    data-testid="open-drive-materials-btn"
-                  >
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                    </svg>
-                    <span>Abrir materiais no Drive</span>
-                  </a>
-                ) : (
-                  <p className="field-hint" style={{ marginTop: '14px' }}>
-                    Materiais ainda não enviados pela unidade.
-                  </p>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  flexWrap: 'wrap',
+                  marginTop: '14px',
+                }}
+              >
+                <div>
+                  {selectedCard.materialsDriveUrl ? (
+                    <a
+                      href={selectedCard.materialsDriveUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="drive-link-row"
+                      style={{ marginTop: 0 }}
+                      data-testid="open-drive-materials-btn"
+                    >
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                      </svg>
+                      <span>Abrir materiais no Drive</span>
+                    </a>
+                  ) : (
+                    <p className="field-hint" style={{ margin: 0 }}>
+                      Materiais ainda não enviados pela unidade.
+                    </p>
+                  )}
+                </div>
+
+                {user.role === 'admin' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {confirmDeleteId === selectedCard.id ? (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          style={{
+                            borderColor: '#ef4444',
+                            color: '#fca5a5',
+                            minHeight: '32px',
+                          }}
+                          disabled={deletingOrder}
+                          onClick={() => void handleDeleteOrder(selectedCard.id)}
+                          data-testid={`confirm-delete-order-${selectedCard.id}`}
+                        >
+                          {deletingOrder ? 'Excluindo...' : 'Confirmar exclusão'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ minHeight: '32px' }}
+                          disabled={deletingOrder}
+                          onClick={() => setConfirmDeleteId(null)}
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        style={{
+                          minHeight: '32px',
+                          fontSize: '0.78rem',
+                          color: 'var(--text-muted)',
+                        }}
+                        onClick={() => setConfirmDeleteId(selectedCard.id)}
+                        data-testid={`delete-order-btn-${selectedCard.id}`}
+                      >
+                        Excluir pedido
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </section>

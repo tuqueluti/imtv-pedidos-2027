@@ -341,6 +341,20 @@ export function createPortalApp(store: PortalStore, options: ApiAppOptions = {})
           return;
         }
 
+        if (orderDetailMatch && method === 'DELETE') {
+          if (currentUser.role !== 'admin') {
+            sendJson(res, 403, {
+              ok: false,
+              error: 'Apenas administradores da IMTV podem excluir pedidos.',
+            });
+            return;
+          }
+          const orderId = Number(orderDetailMatch[1]);
+          store.deleteOrderById(orderId);
+          sendJson(res, 200, { ok: true, deletedId: orderId });
+          return;
+        }
+
         const moveMatch = pathname.match(/^\/api\/board\/orders\/(\d+)\/move$/);
         if (moveMatch && method === 'POST') {
           const orderId = Number(moveMatch[1]);
