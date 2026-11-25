@@ -395,28 +395,20 @@ async function runE2E() {
       (await page.getByTestId(`card-assignee-${protocol1}`).textContent())?.includes('Com Tati')
     );
 
-    // Move para "Finalizados", salva link final separado do Drive, testa WhatsApp e verifica Envio pendente
-    await page.getByTestId(`move-select-${protocol1}`).selectOption('Finalizados');
-    await page.waitForFunction(
-      () => document.querySelector('[data-testid="col-count-Finalizados"]')?.textContent === '1'
-    );
-
+    // Sem link do vídeo final ainda: botão Enviar pelo WhatsApp fica desabilitado
     const finalDeliveryUrl =
       'https://drive.google.com/file/d/9EntregaSemanaBeleza2027/view?usp=sharing&token=imtv27';
     const sendWaBtn = page.getByTestId('send-whatsapp-btn-card-1');
     assert.equal(await sendWaBtn.isDisabled(), true);
 
+    // Ao colar um link HTTPS válido (mesmo ainda fora de "Finalizados" e sem precisar clicar em "Salvar link" antes), o botão já habilita como link nativo <a>!
     await page.fill('#final-link-card-1', finalDeliveryUrl);
-    await page.getByTestId('save-final-link-card-1').click();
     await page.waitForFunction(
       () =>
-        !document
+        document
           .querySelector('[data-testid="send-whatsapp-btn-card-1"]')
-          ?.hasAttribute('disabled')
+          ?.tagName.toLowerCase() === 'a'
     );
-
-    // Verifica que o botão mostra "✓ Salvo"
-    assert.ok((await page.getByTestId('save-final-link-card-1').textContent())?.includes('Salvo'));
 
     // Verifica que o link dos materiais do Drive continua separado e intacto no painel esquerdo
     assert.equal(
@@ -424,21 +416,25 @@ async function runE2E() {
       driveMaterialsLink
     );
 
-    await page.evaluate(() => {
-      (window as unknown as { __LAST_OPENED_WA_URL__?: string }).__LAST_OPENED_WA_URL__ = '';
-      window.open = (url?: string | URL) => {
-        (window as unknown as { __LAST_OPENED_WA_URL__?: string }).__LAST_OPENED_WA_URL__ =
-          String(url || '');
-        return null;
-      };
+    // Intercepta a abertura real da aba https://wa.me/... (sem mockar window.open) para provar zero bloqueio de pop-up
+    let capturedWaRequestUrl = '';
+    await desktopCtx.route('https://wa.me/**', async (route) => {
+      capturedWaRequestUrl = route.request().url();
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/html; charset=utf-8',
+        body: '<!doctype html><title>WhatsApp Handoff OK</title>',
+      });
     });
 
-    await sendWaBtn.click();
-    await page.waitForTimeout(250);
+    const [waPopup] = await Promise.all([
+      desktopCtx.waitForEvent('page'),
+      sendWaBtn.click(),
+    ]);
+    await waPopup.waitForLoadState('domcontentloaded');
+    const openedWaUrl = capturedWaRequestUrl || waPopup.url();
+    await waPopup.close();
 
-    const openedWaUrl = await page.evaluate(
-      () => (window as unknown as { __LAST_OPENED_WA_URL__?: string }).__LAST_OPENED_WA_URL__ || ''
-    );
     assert.ok(openedWaUrl.startsWith('https://wa.me/5548998765432?text='));
     const decodedWaMessage = new URL(openedWaUrl).searchParams.get('text') || '';
     assert.equal(
@@ -446,10 +442,17 @@ async function runE2E() {
       `Olá, Mariana Contato Teste! O vídeo “Semana da Beleza 2027”, que você pediu para a unidade Instituto Mix Florianópolis Centro, está pronto.\n${finalDeliveryUrl}\nProtocolo ${protocol1}. Equipe IMTV`
     );
 
-    // Recarrega sem confirmar envio -> continua "Envio pendente"
+    // Confere que o clique também salvou automaticamente o link ("Salvo") e moveu o cartão para "Finalizados"
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="col-count-Finalizados"]')?.textContent === '1'
+    );
+    assert.ok((await page.getByTestId('save-final-link-card-1').textContent())?.includes('Salvo'));
+
+    // Recarrega sem confirmar envio -> continua em "Finalizados", com "Salvo" e "Envio pendente"
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByTestId('pipefy-board-view').waitFor({ state: 'visible' });
     await page.waitForSelector('[data-testid="delivery-status-1"]');
+    assert.equal(await page.getByTestId('col-count-Finalizados').textContent(), '1');
     assert.equal((await page.getByTestId('delivery-status-1').textContent())?.trim(), 'Envio pendente');
     await page.screenshot({ path: path.join(shotsDir, '09-desktop-quadro-producao-novo.png') });
 

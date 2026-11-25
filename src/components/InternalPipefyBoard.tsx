@@ -9,6 +9,7 @@ import {
   type VideoOrderCard,
   buildWhatsAppUrl,
   isValidValidPhoneE164,
+  validateHttpsUrl,
 } from '../../shared/domain.ts';
 import { assetUrl, ORDERS_SYNC_CHANNEL, portalFetch } from '../api/clientApi.ts';
 import { ImtvLogo } from './ImtvLogo.tsx';
@@ -314,27 +315,76 @@ export function InternalPipefyBoard({
     }
   };
 
-  const handleOpenWhatsApp = async (card: VideoOrderCard, whatsappHref: string) => {
-    if (!whatsappHref) return;
-    try {
-      const resp = await portalFetch(`/api/board/orders/${card.id}/whatsapp-opened`, {
-        method: 'POST',
-      });
-      const data = await resp.json().catch(() => null);
-      if (resp.ok && data?.ok) {
-        syncUpdatedCard(data.order as VideoOrderCard, data.events as OrderEventItem[]);
+  const handleOpenWhatsApp = (card: VideoOrderCard, videoUrlToPersist: string) => {
+    // Registra em segundo plano (keepalive) sem bloquear nem atrasar a abertura nativa do WhatsApp App
+    void (async () => {
+      try {
+        let latestCard = card;
+        let latestEvents: OrderEventItem[] | undefined;
+
+        if (videoUrlToPersist && videoUrlToPersist !== (card.finalVideoUrl || '').trim()) {
+          const saveResp = await portalFetch(`/api/board/orders/${card.id}/final-video`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ finalVideoUrl: videoUrlToPersist }),
+            keepalive: true,
+          });
+          const saveData = await saveResp.json().catch(() => null);
+          if (saveResp.ok && saveData?.ok) {
+            latestCard = saveData.order as VideoOrderCard;
+            latestEvents = saveData.events as OrderEventItem[];
+          }
+        }
+
+        if (latestCard.boardColumn !== 'Finalizados') {
+          const moveResp = await portalFetch(`/api/board/orders/${card.id}/move`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetColumn: 'Finalizados' }),
+            keepalive: true,
+          });
+          const moveData = await moveResp.json().catch(() => null);
+          if (moveResp.ok && moveData?.ok) {
+            latestCard = moveData.order as VideoOrderCard;
+            latestEvents = moveData.events as OrderEventItem[];
+          }
+        }
+
+        const resp = await portalFetch(`/api/board/orders/${card.id}/whatsapp-opened`, {
+          method: 'POST',
+          keepalive: true,
+        });
+        const data = await resp.json().catch(() => null);
+        if (resp.ok && data?.ok) {
+          latestCard = data.order as VideoOrderCard;
+          latestEvents = data.events as OrderEventItem[];
+        }
+
+        syncUpdatedCard(latestCard, latestEvents);
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
-    window.open(whatsappHref, '_blank', 'noopener,noreferrer');
+    })();
   };
 
-  const handleConfirmDelivery = async (card: VideoOrderCard) => {
-    if (!card.finalVideoUrl || confirmingWa) return;
+  const handleConfirmDelivery = async (card: VideoOrderCard, videoUrlToPersist: string) => {
+    if ((!card.finalVideoUrl && !videoUrlToPersist) || confirmingWa) return;
     setConfirmingWa(true);
     setDeliveryErr(null);
     try {
+      if (videoUrlToPersist && videoUrlToPersist !== (card.finalVideoUrl || '').trim()) {
+        const saveResp = await portalFetch(`/api/board/orders/${card.id}/final-video`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ finalVideoUrl: videoUrlToPersist }),
+        });
+        const saveData = await saveResp.json();
+        if (!saveResp.ok || !saveData.ok) {
+          setDeliveryErr(saveData.error || 'Salve uma URL HTTPS válida antes de confirmar.');
+          return;
+        }
+      }
+
       const resp = await portalFetch(`/api/board/orders/${card.id}/confirm-whatsapp`, {
         method: 'POST',
       });
@@ -490,27 +540,33 @@ export function InternalPipefyBoard({
     );
   }
 
-  // Cálculos de entrega para o cartão selecionado
+  // Cálculos de entrega para o cartão selecionado (habilita WhatsApp em qualquer coluna assim que houver link HTTPS válido)
   const hasValidPhone = selectedCard ? isValidValidPhoneE164(selectedCard.whatsappE164) : false;
+  const draftUrlCheck = validateHttpsUrl(finalLinkDraft);
+  const savedUrlCheck = selectedCard?.finalVideoUrl
+    ? validateHttpsUrl(selectedCard.finalVideoUrl)
+    : { valid: false, url: '' };
+  const effectiveFinalVideoUrl = draftUrlCheck.valid
+    ? draftUrlCheck.url
+    : savedUrlCheck.valid
+      ? savedUrlCheck.url
+      : '';
   const isFinalLinkSaved = Boolean(
     selectedCard &&
       selectedCard.finalVideoUrl &&
       selectedCard.finalVideoUrl.trim() === finalLinkDraft.trim()
   );
   const canSendWhatsApp = Boolean(
-    selectedCard &&
-      selectedCard.boardColumn === 'Finalizados' &&
-      hasValidPhone &&
-      isFinalLinkSaved
+    selectedCard && hasValidPhone && effectiveFinalVideoUrl
   );
   const whatsappHref =
-    selectedCard && canSendWhatsApp && selectedCard.finalVideoUrl
+    selectedCard && canSendWhatsApp
       ? buildWhatsAppUrl({
           whatsappE164: selectedCard.whatsappE164,
           requesterName: selectedCard.requesterName,
           title: selectedCard.title,
           unitName: selectedCard.unitName,
-          finalVideoUrl: selectedCard.finalVideoUrl,
+          finalVideoUrl: effectiveFinalVideoUrl,
           protocol: selectedCard.protocol,
         })
       : '';
@@ -1077,38 +1133,57 @@ export function InternalPipefyBoard({
                   </p>
                 )}
 
-                {selectedCard.boardColumn !== 'Finalizados' && (
+                {!effectiveFinalVideoUrl && (
                   <p className="field-hint" style={{ marginTop: '10px' }}>
-                    Mova o cartão para &ldquo;Finalizados&rdquo; para habilitar o disparo pelo WhatsApp.
+                    {finalLinkDraft.trim() && draftUrlCheck.error
+                      ? draftUrlCheck.error
+                      : 'Cole acima o link HTTPS do vídeo pronto para liberar o envio pelo WhatsApp.'}
                   </p>
                 )}
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '18px' }}>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  style={{ width: '100%', minHeight: '50px', fontSize: '1.05rem' }}
-                  disabled={!canSendWhatsApp}
-                  onClick={() => void handleOpenWhatsApp(selectedCard, whatsappHref)}
-                  data-whatsapp-url={whatsappHref}
-                  data-testid={`send-whatsapp-btn-card-${selectedCard.id}`}
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-                  </svg>
-                  <span>Enviar pelo WhatsApp</span>
-                </button>
+                {canSendWhatsApp ? (
+                  <a
+                    href={whatsappHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-primary"
+                    style={{ width: '100%', minHeight: '50px', fontSize: '1.05rem' }}
+                    onClick={() => handleOpenWhatsApp(selectedCard, effectiveFinalVideoUrl)}
+                    data-whatsapp-url={whatsappHref}
+                    data-testid={`send-whatsapp-btn-card-${selectedCard.id}`}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                    </svg>
+                    <span>Enviar pelo WhatsApp</span>
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ width: '100%', minHeight: '50px', fontSize: '1.05rem' }}
+                    disabled
+                    data-whatsapp-url=""
+                    data-testid={`send-whatsapp-btn-card-${selectedCard.id}`}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                    </svg>
+                    <span>Enviar pelo WhatsApp</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
                   className="confirm-send-link"
                   disabled={
                     confirmingWa ||
-                    !selectedCard.finalVideoUrl ||
+                    !effectiveFinalVideoUrl ||
                     selectedCard.whatsappDeliveryStatus === 'confirmed'
                   }
-                  onClick={() => void handleConfirmDelivery(selectedCard)}
+                  onClick={() => void handleConfirmDelivery(selectedCard, effectiveFinalVideoUrl)}
                   data-testid={`confirm-whatsapp-btn-card-${selectedCard.id}`}
                 >
                   {selectedCard.whatsappDeliveryStatus === 'confirmed'
