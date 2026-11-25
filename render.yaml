@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: imtv-pedidos-2027
+    runtime: docker
+    plan: starter
+    envVars:
+      - key: PORT
+        value: 3270
+      - key: IMTV_DB_PATH
+        value: /app/data/imtv-pedidos-2027.sqlite
+    disk:
+      name: imtv-sqlite-data
+      mountPath: /app/data
+      sizeGB: 1

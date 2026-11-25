@@ -103,8 +103,28 @@ test('Isolamento público, idempotência contra clique duplo e repetição isola
       body: JSON.stringify({ username: 'luti', password: process.env.IMTV_INITIAL_PASSWORD || 'imtv2027' }),
     });
     assert.equal(loginRes.status, 200);
+    const loginJson = (await loginRes.json()) as { token?: string };
+    assert.ok(loginJson.token && loginJson.token.length > 16);
     const adminCookie = loginRes.headers.get('set-cookie')?.split(';')[0] || '';
     assert.ok(adminCookie.startsWith('imtv_session_2027='));
+
+    // Confere que o banco inicia 100% limpo sem pedidos de exemplo e aceita Bearer token + CORS
+    const preflightRes = await fetch(`${env.baseUrl}/api/board/orders`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://tuqueluti.github.io' },
+    });
+    assert.equal(preflightRes.status, 204);
+    assert.equal(
+      preflightRes.headers.get('access-control-allow-origin'),
+      'https://tuqueluti.github.io'
+    );
+
+    const emptyBoardRes = await fetch(`${env.baseUrl}/api/board/orders`, {
+      headers: { Authorization: `Bearer ${loginJson.token}` },
+    });
+    assert.equal(emptyBoardRes.status, 200);
+    const emptyBoardJson = (await emptyBoardRes.json()) as { orders: unknown[] };
+    assert.equal(emptyBoardJson.orders.length, 0);
 
     const saveCfgRes = await fetch(`${env.baseUrl}/api/admin/settings`, {
       method: 'PUT',

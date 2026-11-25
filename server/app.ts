@@ -41,7 +41,28 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
   return out;
 }
 
-function sendJson(res: http.ServerResponse, status: number, payload: unknown, extraHeaders?: Record<string, string>): void {
+function applyCorsHeaders(req: http.IncomingMessage, res: http.ServerResponse): void {
+  const origin = req.headers.origin;
+  if (!origin) return;
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Test-Fail-Db-Write');
+  res.setHeader('Vary', 'Origin');
+}
+
+function extractBearerToken(authHeader: string | undefined): string | undefined {
+  if (!authHeader) return undefined;
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : undefined;
+}
+
+function sendJson(
+  res: http.ServerResponse,
+  status: number,
+  payload: unknown,
+  extraHeaders?: Record<string, string>
+): void {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -89,10 +110,23 @@ export function createPortalApp(store: PortalStore, options: ApiAppOptions = {})
 
   return async (req, res) => {
     try {
+      applyCorsHeaders(req, res);
+
       const host = req.headers.host || '127.0.0.1';
       const url = new URL(req.url || '/', `http://${host}`);
       const pathname = url.pathname;
       const method = (req.method || 'GET').toUpperCase();
+
+      if (method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      if (pathname === '/api/health' && method === 'GET') {
+        sendJson(res, 200, { ok: true, service: 'imtv-pedidos-2027' });
+        return;
+      }
 
       // --- PUBLIC API (No internal contacts, no internal board, no other units' orders) ---
       if (pathname === '/api/public/config' && method === 'GET') {
@@ -207,9 +241,10 @@ export function createPortalApp(store: PortalStore, options: ApiAppOptions = {})
         return;
       }
 
-      // --- AUTHENTICATION API ---
+      // --- AUTHENTICATION API (aceita Cookie HttpOnly same-origin ou Bearer token cross-origin/iOS) ---
       const cookies = parseCookies(req.headers.cookie);
-      const sessionToken = cookies[SESSION_COOKIE_NAME];
+      const bearerToken = extractBearerToken(req.headers.authorization);
+      const sessionToken = bearerToken || cookies[SESSION_COOKIE_NAME];
       const currentUser = store.getSessionUser(sessionToken);
 
       if (pathname === '/api/auth/me' && method === 'GET') {
@@ -235,7 +270,7 @@ export function createPortalApp(store: PortalStore, options: ApiAppOptions = {})
         sendJson(
           res,
           200,
-          { ok: true, user: auth.user },
+          { ok: true, user: auth.user, token: auth.token },
           {
             'Set-Cookie': `${SESSION_COOKIE_NAME}=${encodeURIComponent(auth.token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}`,
           }

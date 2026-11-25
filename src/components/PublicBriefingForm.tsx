@@ -692,7 +692,6 @@ export function PublicBriefingForm({
                           id="f-waNumber"
                           type="tel"
                           aria-label="Seu WhatsApp para receber o vídeo"
-                          placeholder="99988-7766"
                           style={{ flex: 1, minWidth: 0 }}
                           value={draft.whatsappNumber}
                           onChange={(e) => updateField('whatsappNumber', e.target.value)}
@@ -924,7 +923,6 @@ export function PublicBriefingForm({
                     id="f-mandatoryInfo"
                     type="text"
                     className="input-dark"
-                    placeholder="Endereço, telefone local, regras promocionais ou créditos obrigatórios"
                     value={draft.mandatoryInfo}
                     onChange={(e) => updateField('mandatoryInfo', e.target.value)}
                   />
@@ -962,7 +960,6 @@ export function PublicBriefingForm({
                     id="f-driveUrl"
                     type="url"
                     className={`input-dark ${errors.materialsDriveUrl ? 'has-error' : ''}`}
-                    placeholder="https://drive.google.com/drive/folders/..."
                     value={draft.materialsDriveUrl}
                     onChange={(e) => updateField('materialsDriveUrl', e.target.value)}
                   />

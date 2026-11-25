@@ -404,7 +404,7 @@ export function AdminSettingsModal({
                           id="adm-emailTo"
                           type="email"
                           className="input-dark"
-                          placeholder="producao@imtv.com.br"
+                          placeholder="E-mail de destino"
                           value={emailTo}
                           onChange={(e) => setEmailTo(e.target.value)}
                           required={emailEnabled}
@@ -418,7 +418,7 @@ export function AdminSettingsModal({
                           id="adm-smtpFrom"
                           type="text"
                           className="input-dark"
-                          placeholder="IMTV Pedidos <noreply@imtv.com.br>"
+                          placeholder="Nome e e-mail do remetente"
                           value={smtpFrom}
                           onChange={(e) => setSmtpFrom(e.target.value)}
                         />
@@ -434,7 +434,7 @@ export function AdminSettingsModal({
                           id="adm-smtpHost"
                           type="text"
                           className="input-dark"
-                          placeholder="smtp.seuprovedor.com.br"
+                          placeholder="Host do servidor SMTP"
                           value={smtpHost}
                           onChange={(e) => setSmtpHost(e.target.value)}
                         />
@@ -557,7 +557,7 @@ export function AdminSettingsModal({
                   <input
                     type="text"
                     className="input-dark"
-                    placeholder="Login (ex.: tatiani)"
+                    placeholder="Login de acesso"
                     value={mUser}
                     onChange={(e) => setMUser(e.target.value)}
                     required

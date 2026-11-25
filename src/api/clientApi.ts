@@ -25,7 +25,6 @@ export function assetUrl(cleanPath: string): string {
     return cleanPath;
   }
   const base = import.meta.env.BASE_URL || '/';
-  // Se cleanPath já começa com base (ex.: /imtv-pedidos-2027/...), mantém
   if (base !== '/' && cleanPath.startsWith(base)) {
     return cleanPath;
   }
@@ -39,16 +38,74 @@ export function normalizeLogoUrl(logoUrl: string | null | undefined): string | n
   if (logoUrl.startsWith('/branding/')) {
     return assetUrl(logoUrl);
   }
+  const apiBase = getConfiguredApiBaseUrl();
+  if (apiBase && logoUrl.startsWith('/api/')) {
+    return `${apiBase}${logoUrl}`;
+  }
   return logoUrl;
 }
 
-// ============================================================================
-// Motor Local-First Embarcado (ativado automaticamente apenas em hospedagem
-// estática como GitHub Pages quando não há backend Node conectado)
-// ============================================================================
+const LEGACY_DEMO_LS_KEY = 'imtv_portal_2027_static_db_v1';
+const LS_KEY = 'imtv_portal_2027_prod_v2';
+const LS_SESSION_KEY = 'imtv_portal_2027_static_session_v2';
+const LS_BEARER_TOKEN_KEY = 'imtv_portal_2027_api_token_v1';
+const LS_CUSTOM_API_URL_KEY = 'imtv_portal_2027_api_base_url';
+export const ORDERS_SYNC_CHANNEL = 'imtv_orders_sync_2027';
 
-const LS_KEY = 'imtv_portal_2027_static_db_v1';
-const LS_SESSION_KEY = 'imtv_portal_2027_static_session_v1';
+// Limpa imediatamente qualquer rastro dos exemplos antigos na primeira execução
+if (typeof window !== 'undefined') {
+  try {
+    window.localStorage.removeItem(LEGACY_DEMO_LS_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function getConfiguredApiBaseUrl(): string {
+  const envUrl = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+  if (envUrl) return envUrl;
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = (window.localStorage.getItem(LS_CUSTOM_API_URL_KEY) || '')
+        .trim()
+        .replace(/\/+$/, '');
+      if (saved) return saved;
+    } catch {
+      // ignore
+    }
+  }
+  return '';
+}
+
+export function setConfiguredApiBaseUrl(url: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const clean = url.trim().replace(/\/+$/, '');
+    if (clean) {
+      window.localStorage.setItem(LS_CUSTOM_API_URL_KEY, clean);
+      staticModeDetected = false;
+    } else {
+      window.localStorage.removeItem(LS_CUSTOM_API_URL_KEY);
+      staticModeDetected = null;
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function notifyOrdersChanged(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.dispatchEvent(new CustomEvent('imtv:orders-changed'));
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel(ORDERS_SYNC_CHANNEL);
+      bc.postMessage({ updatedAt: Date.now() });
+      bc.close();
+    }
+  } catch {
+    // ignore
+  }
+}
 
 interface StaticDbState {
   recipientTeamName: string;
@@ -70,244 +127,6 @@ interface StaticDbState {
 }
 
 function createInitialStaticDb(): StaticDbState {
-  const now = new Date().toISOString();
-  const demoOrders: Array<VideoOrderCard & { idempotencyKey: string }> = [
-    {
-      id: 1,
-      protocol: 'IMTV-2027-0022',
-      idempotencyKey: 'seed_1',
-      unitName: 'Unidade Centro',
-      city: 'Florianópolis',
-      uf: 'SC',
-      requesterName: 'Carla Mendes',
-      requesterEmail: 'carla@unidadecentro.example',
-      whatsappCountryCode: '+55',
-      whatsappDdd: '48',
-      whatsappDisplay: '+55 (48) 99812-3401',
-      whatsappE164: '+5548998123401',
-      recipientTeamName: 'Equipe de Produção da IMTV',
-      title: 'Campanha de matrículas',
-      objective: 'Captar alunos para as turmas do primeiro semestre.',
-      targetAudience: 'Jovens e adultos de 18 a 40 anos',
-      distributionChannel: 'Instagram (Reels / Stories / Feed)',
-      videoFormat: 'Vertical 9:16 (Reels / Shorts / Stories)',
-      needsFormatGuidance: false,
-      desiredDate: '2027-03-12',
-      mainMessage: 'Matrículas abertas com aulas práticas desde a primeira semana.',
-      mandatoryInfo: 'Unidade Centro',
-      materialsDriveUrl: 'https://drive.google.com/drive/folders/1ExemploCampanhaMatriculas',
-      materialsPending: false,
-      materialsNotes: '',
-      boardColumn: 'Recebido',
-      assignee: null,
-      waitingReason: '',
-      finalVideoUrl: null,
-      whatsappDeliveryStatus: 'pending',
-      whatsappOpenedAt: null,
-      whatsappConfirmedAt: null,
-      whatsappConfirmedBy: null,
-      emailNotificationStatus: 'disabled',
-      emailNotificationError: null,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 2,
-      protocol: 'IMTV-2027-0023',
-      idempotencyKey: 'seed_2',
-      unitName: 'Unidade Norte',
-      city: 'Joinville',
-      uf: 'SC',
-      requesterName: 'Marcos Silva',
-      requesterEmail: 'marcos@unidadenorte.example',
-      whatsappCountryCode: '+55',
-      whatsappDdd: '47',
-      whatsappDisplay: '+55 (47) 99741-1120',
-      whatsappE164: '+5547997411120',
-      recipientTeamName: 'Equipe de Produção da IMTV',
-      title: 'Aula inaugural',
-      objective: 'Convidar alunos matriculados para a aula inaugural.',
-      targetAudience: 'Novos alunos 2027',
-      distributionChannel: 'WhatsApp Comercial / Matrículas',
-      videoFormat: 'Vertical 9:16 (Reels / Shorts / Stories)',
-      needsFormatGuidance: false,
-      desiredDate: '2027-03-10',
-      mainMessage: 'Sua jornada profissional começa nesta segunda-feira.',
-      mandatoryInfo: '',
-      materialsDriveUrl: 'https://drive.google.com/drive/folders/1ExemploAulaInaugural',
-      materialsPending: false,
-      materialsNotes: '',
-      boardColumn: 'Luti',
-      assignee: 'Luti',
-      waitingReason: '',
-      finalVideoUrl: null,
-      whatsappDeliveryStatus: 'pending',
-      whatsappOpenedAt: null,
-      whatsappConfirmedAt: null,
-      whatsappConfirmedBy: null,
-      emailNotificationStatus: 'disabled',
-      emailNotificationError: null,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 3,
-      protocol: 'IMTV-2027-0024',
-      idempotencyKey: 'seed_3',
-      unitName: 'Unidade Sul',
-      city: 'Criciúma',
-      uf: 'SC',
-      requesterName: 'Fernanda Costa',
-      requesterEmail: 'fernanda@unidadesul.example',
-      whatsappCountryCode: '+55',
-      whatsappDdd: '48',
-      whatsappDisplay: '+55 (48) 99630-8840',
-      whatsappE164: '+5548996308840',
-      recipientTeamName: 'Equipe de Produção da IMTV',
-      title: 'Tour da unidade',
-      objective: 'Apresentar os novos laboratórios reformados.',
-      targetAudience: 'Interessados nos cursos presenciais',
-      distributionChannel: 'Instagram (Reels / Stories / Feed)',
-      videoFormat: 'Versão dupla (16:9 + 9:16)',
-      needsFormatGuidance: false,
-      desiredDate: '2027-03-11',
-      mainMessage: 'Conheça de perto a estrutura completa da Unidade Sul.',
-      mandatoryInfo: '',
-      materialsDriveUrl: 'https://drive.google.com/drive/folders/1ExemploTourUnidade',
-      materialsPending: false,
-      materialsNotes: '',
-      boardColumn: 'Tati',
-      assignee: 'Tati',
-      waitingReason: '',
-      finalVideoUrl: null,
-      whatsappDeliveryStatus: 'pending',
-      whatsappOpenedAt: null,
-      whatsappConfirmedAt: null,
-      whatsappConfirmedBy: null,
-      emailNotificationStatus: 'disabled',
-      emailNotificationError: null,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 4,
-      protocol: 'IMTV-2027-0025',
-      idempotencyKey: 'seed_4',
-      unitName: 'Unidade Leste',
-      city: 'Itajaí',
-      uf: 'SC',
-      requesterName: 'Lucas Almeida',
-      requesterEmail: 'lucas@unidadeleste.example',
-      whatsappCountryCode: '+55',
-      whatsappDdd: '47',
-      whatsappDisplay: '+55 (47) 99904-5521',
-      whatsappE164: '+5547999045521',
-      recipientTeamName: 'Equipe de Produção da IMTV',
-      title: 'Feira de profissões',
-      objective: 'Divulgar oficinas gratuitas da feira.',
-      targetAudience: 'Estudantes do ensino médio',
-      distributionChannel: 'Tráfego Pago (Meta Ads / Google Ads)',
-      videoFormat: 'Vertical 9:16 (Reels / Shorts / Stories)',
-      needsFormatGuidance: false,
-      desiredDate: '2027-03-15',
-      mainMessage: 'Participe das oficinas práticas gratuitas na Feira de Profissões.',
-      mandatoryInfo: '',
-      materialsDriveUrl: 'https://drive.google.com/drive/folders/1ExemploFeiraProfissoes',
-      materialsPending: false,
-      materialsNotes: '',
-      boardColumn: 'Marcio',
-      assignee: 'Marcio',
-      waitingReason: '',
-      finalVideoUrl: null,
-      whatsappDeliveryStatus: 'pending',
-      whatsappOpenedAt: null,
-      whatsappConfirmedAt: null,
-      whatsappConfirmedBy: null,
-      emailNotificationStatus: 'disabled',
-      emailNotificationError: null,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 5,
-      protocol: 'IMTV-2027-0026',
-      idempotencyKey: 'seed_5',
-      unitName: 'Unidade Oeste',
-      city: 'Chapecó',
-      uf: 'SC',
-      requesterName: 'Patrícia Rocha',
-      requesterEmail: 'patricia@unidadeoeste.example',
-      whatsappCountryCode: '+55',
-      whatsappDdd: '49',
-      whatsappDisplay: '+55 (49) 99822-7710',
-      whatsappE164: '+5549998227710',
-      recipientTeamName: 'Equipe de Produção da IMTV',
-      title: 'Depoimento de aluna',
-      objective: 'Prova social de ex-aluna formada em Gastronomia.',
-      targetAudience: 'Público geral da região Oeste',
-      distributionChannel: 'Instagram (Reels / Stories / Feed)',
-      videoFormat: 'Vertical 9:16 (Reels / Shorts / Stories)',
-      needsFormatGuidance: false,
-      desiredDate: '2027-03-14',
-      mainMessage: 'História real de conquista no mercado gastronômico.',
-      mandatoryInfo: '',
-      materialsDriveUrl: 'https://drive.google.com/drive/folders/1ExemploDepoimentoAluna',
-      materialsPending: false,
-      materialsNotes: '',
-      boardColumn: 'Aguardando',
-      assignee: 'Tati',
-      waitingReason: 'falta aprovação',
-      finalVideoUrl: null,
-      whatsappDeliveryStatus: 'pending',
-      whatsappOpenedAt: null,
-      whatsappConfirmedAt: null,
-      whatsappConfirmedBy: null,
-      emailNotificationStatus: 'disabled',
-      emailNotificationError: null,
-      createdAt: now,
-      updatedAt: now,
-    },
-    {
-      id: 6,
-      protocol: 'IMTV-2027-0027',
-      idempotencyKey: 'seed_6',
-      unitName: 'Unidade Centro',
-      city: 'Araranguá',
-      uf: 'SC',
-      requesterName: 'Ana da unidade',
-      requesterEmail: 'ana@unidadecentro.example',
-      whatsappCountryCode: '+55',
-      whatsappDdd: '48',
-      whatsappDisplay: '+55 (48) 99915-2027',
-      whatsappE164: '+5548999152027',
-      recipientTeamName: 'Equipe de Produção da IMTV',
-      title: 'Semana da Beleza',
-      objective: 'Divulgar as oficinas da Semana da Beleza.',
-      targetAudience: 'Interessados na área da beleza',
-      distributionChannel: 'Instagram (Reels / Stories / Feed)',
-      videoFormat: 'Vertical 9:16 (Reels / Shorts / Stories)',
-      needsFormatGuidance: false,
-      desiredDate: '2027-03-09',
-      mainMessage: 'Divulgar as oficinas da Semana da Beleza.',
-      mandatoryInfo: '',
-      materialsDriveUrl: 'https://drive.google.com/drive/folders/1ExemploSemanaBeleza',
-      materialsPending: false,
-      materialsNotes: '',
-      boardColumn: 'Finalizados',
-      assignee: 'Tati',
-      waitingReason: '',
-      finalVideoUrl: 'https://drive.google.com/file/d/1SemanaDaBelezaFinal2027/view?usp=sharing',
-      whatsappDeliveryStatus: 'pending',
-      whatsappOpenedAt: null,
-      whatsappConfirmedAt: null,
-      whatsappConfirmedBy: null,
-      emailNotificationStatus: 'disabled',
-      emailNotificationError: null,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
-
   return {
     recipientTeamName: 'Equipe de Produção da IMTV',
     logoMode: 'bundled',
@@ -326,9 +145,9 @@ function createInitialStaticDb(): StaticDbState {
       { id: 'usr_marcio', username: 'marcio', displayName: 'Marcio', email: 'marcio@imtv.com.br', role: 'member', queueColumn: 'Marcio', active: true, passwordPlain: 'imtv2027' },
       { id: 'usr_monica', username: 'monica', displayName: 'Monica', email: 'monica@imtv.com.br', role: 'admin', queueColumn: null, active: true, passwordPlain: 'imtv2027' },
     ],
-    orders: demoOrders,
+    orders: [],
     events: [],
-    nextId: 28,
+    nextId: 1,
     nextEventId: 1,
   };
 }
@@ -336,7 +155,16 @@ function createInitialStaticDb(): StaticDbState {
 function loadStaticDb(): StaticDbState {
   try {
     const raw = window.localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw) as StaticDbState;
+    if (raw) {
+      const parsed = JSON.parse(raw) as StaticDbState;
+      // Garante que nenhum cartão antigo de seed permaneça salvo
+      if (Array.isArray(parsed.orders)) {
+        parsed.orders = parsed.orders.filter(
+          (o) => !String(o.idempotencyKey || '').startsWith('seed_')
+        );
+      }
+      return parsed;
+    }
   } catch {
     // ignore
   }
@@ -463,6 +291,7 @@ function handleStaticApi(pathname: string, urlObj: URL, init?: RequestInit): Res
       createdAt: now,
     });
     saveStaticDb(db);
+    notifyOrdersChanged();
 
     return staticJsonResponse(201, {
       ok: true,
@@ -586,6 +415,7 @@ function handleStaticApi(pathname: string, urlObj: URL, init?: RequestInit): Res
     }
     order.updatedAt = new Date().toISOString();
     saveStaticDb(db);
+    notifyOrdersChanged();
     return staticJsonResponse(200, {
       ok: true,
       order,
@@ -601,6 +431,7 @@ function handleStaticApi(pathname: string, urlObj: URL, init?: RequestInit): Res
     order.waitingReason = String(bodyObj.waitingReason || '').trim();
     order.updatedAt = new Date().toISOString();
     saveStaticDb(db);
+    notifyOrdersChanged();
     return staticJsonResponse(200, {
       ok: true,
       order,
@@ -625,6 +456,7 @@ function handleStaticApi(pathname: string, urlObj: URL, init?: RequestInit): Res
     order.finalVideoUrl = check.url;
     order.updatedAt = new Date().toISOString();
     saveStaticDb(db);
+    notifyOrdersChanged();
     return staticJsonResponse(200, {
       ok: true,
       order,
@@ -657,6 +489,7 @@ function handleStaticApi(pathname: string, urlObj: URL, init?: RequestInit): Res
     order.whatsappConfirmedAt = new Date().toISOString();
     order.whatsappConfirmedBy = currentUser.displayName;
     saveStaticDb(db);
+    notifyOrdersChanged();
     return staticJsonResponse(200, {
       ok: true,
       order,
@@ -764,37 +597,71 @@ function handleStaticApi(pathname: string, urlObj: URL, init?: RequestInit): Res
 let staticModeDetected: boolean | null = null;
 
 export async function portalFetch(apiPath: string, init?: RequestInit): Promise<Response> {
-  const configuredApiBase = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+  const configuredApiBase = getConfiguredApiBaseUrl();
   const fullUrl = configuredApiBase ? `${configuredApiBase}${apiPath}` : apiPath;
 
-  const isGitHubPagesHost =
+  const isGitHubPagesWithoutRemoteApi =
     typeof window !== 'undefined' &&
     !configuredApiBase &&
     window.location.hostname.endsWith('.github.io');
 
-  if (isGitHubPagesHost || staticModeDetected === true) {
+  if (isGitHubPagesWithoutRemoteApi || staticModeDetected === true) {
     staticModeDetected = true;
     const parsed = new URL(apiPath, window.location.origin);
     return handleStaticApi(parsed.pathname, parsed, init);
   }
 
-  try {
-    const resp = await fetch(fullUrl, init);
-    const contentType = resp.headers.get('content-type') || '';
-    // Se um host estático devolveu HTML 404 para /api/*, cai de forma transparente para o motor local
-    if (
-      !configuredApiBase &&
-      window.location.hostname !== '127.0.0.1' &&
-      window.location.hostname !== 'localhost' &&
-      (resp.status === 404 || resp.status === 405) &&
-      !contentType.includes('application/json')
-    ) {
-      staticModeDetected = true;
-      const parsed = new URL(apiPath, window.location.origin);
-      return handleStaticApi(parsed.pathname, parsed, init);
+  const headers = new Headers(init?.headers || {});
+  if (typeof window !== 'undefined') {
+    try {
+      const savedToken = window.localStorage.getItem(LS_BEARER_TOKEN_KEY);
+      if (savedToken && !headers.has('Authorization')) {
+        headers.set('Authorization', `Bearer ${savedToken}`);
+      }
+    } catch {
+      // ignore
     }
-    return resp;
-  } catch (err) {
-    throw err;
   }
+
+  const resp = await fetch(fullUrl, {
+    ...init,
+    headers,
+    credentials: configuredApiBase ? 'include' : 'same-origin',
+  });
+
+  const contentType = resp.headers.get('content-type') || '';
+  if (
+    !configuredApiBase &&
+    typeof window !== 'undefined' &&
+    window.location.hostname !== '127.0.0.1' &&
+    window.location.hostname !== 'localhost' &&
+    (resp.status === 404 || resp.status === 405) &&
+    !contentType.includes('application/json')
+  ) {
+    staticModeDetected = true;
+    const parsed = new URL(apiPath, window.location.origin);
+    return handleStaticApi(parsed.pathname, parsed, init);
+  }
+
+  // Salva ou limpa token Bearer em login/logout para funcionar também no Safari iOS (ITP cross-origin)
+  if (apiPath === '/api/auth/login' && resp.ok) {
+    try {
+      const cloned = await resp.clone().json();
+      if (cloned?.token && typeof window !== 'undefined') {
+        window.localStorage.setItem(LS_BEARER_TOKEN_KEY, String(cloned.token));
+      }
+    } catch {
+      // ignore
+    }
+  } else if (apiPath === '/api/auth/logout') {
+    try {
+      window.localStorage.removeItem(LS_BEARER_TOKEN_KEY);
+    } catch {
+      // ignore
+    }
+  } else if (apiPath === '/api/public/orders' && resp.ok) {
+    notifyOrdersChanged();
+  }
+
+  return resp;
 }

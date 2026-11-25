@@ -10,7 +10,7 @@ import {
   buildWhatsAppUrl,
   isValidValidPhoneE164,
 } from '../../shared/domain.ts';
-import { assetUrl, portalFetch } from '../api/clientApi.ts';
+import { assetUrl, ORDERS_SYNC_CHANNEL, portalFetch } from '../api/clientApi.ts';
 import { ImtvLogo } from './ImtvLogo.tsx';
 import { AdminSettingsModal } from './AdminSettingsModal.tsx';
 
@@ -116,46 +116,71 @@ export function InternalPipefyBoard({
     };
   }, []);
 
-  const fetchBoardOrders = useCallback(async () => {
-    if (!user) return;
-    setBoardLoading(true);
-    setBoardError(null);
-    try {
-      const qs = new URLSearchParams();
-      if (filterUnit.trim()) qs.set('unit', filterUnit.trim());
-      if (filterAssignee !== 'all') qs.set('assignee', filterAssignee);
-      if (filterDeadline !== 'all') qs.set('deadline', filterDeadline);
+  const fetchBoardOrders = useCallback(
+    async (silent = false) => {
+      if (!user) return;
+      if (!silent) {
+        setBoardLoading(true);
+        setBoardError(null);
+      }
+      try {
+        const qs = new URLSearchParams();
+        if (filterUnit.trim()) qs.set('unit', filterUnit.trim());
+        if (filterAssignee !== 'all') qs.set('assignee', filterAssignee);
+        if (filterDeadline !== 'all') qs.set('deadline', filterDeadline);
 
-      const resp = await portalFetch(`/api/board/orders?${qs.toString()}`);
-      if (resp.status === 401) {
-        setUser(null);
-        return;
+        const resp = await portalFetch(`/api/board/orders?${qs.toString()}`);
+        if (resp.status === 401) {
+          setUser(null);
+          return;
+        }
+        const data = await resp.json();
+        if (!resp.ok) {
+          if (!silent) setBoardError(data.error || 'Erro ao carregar o quadro.');
+          return;
+        }
+        const list = (data.orders || []) as VideoOrderCard[];
+        setOrders(list);
+        setKnownUnits((data.units || []) as string[]);
+        setSelectedOrderId((prev) => {
+          if (prev && list.some((o) => o.id === prev)) return prev;
+          return list[0]?.id ?? null;
+        });
+      } catch {
+        if (!silent) setBoardError('Não foi possível atualizar os cartões.');
+      } finally {
+        if (!silent) setBoardLoading(false);
       }
-      const data = await resp.json();
-      if (!resp.ok) {
-        setBoardError(data.error || 'Erro ao carregar o quadro.');
-        return;
-      }
-      const list = (data.orders || []) as VideoOrderCard[];
-      setOrders(list);
-      setKnownUnits((data.units || []) as string[]);
-      setSelectedOrderId((prev) => {
-        if (prev && list.some((o) => o.id === prev)) return prev;
-        // Prioriza exibir um cartão de Finalizados ou o mais recente
-        const fin = list.find((o) => o.boardColumn === 'Finalizados');
-        return fin ? fin.id : list[0]?.id ?? null;
-      });
-    } catch {
-      setBoardError('Não foi possível atualizar os cartões.');
-    } finally {
-      setBoardLoading(false);
-    }
-  }, [user, filterUnit, filterAssignee, filterDeadline]);
+    },
+    [user, filterUnit, filterAssignee, filterDeadline]
+  );
 
   useEffect(() => {
-    if (user) {
-      void fetchBoardOrders();
+    if (!user) return;
+    void fetchBoardOrders(false);
+
+    const pollTimer = window.setInterval(() => {
+      if (!document.hidden) {
+        void fetchBoardOrders(true);
+      }
+    }, 12000);
+
+    const onSync = () => void fetchBoardOrders(true);
+    window.addEventListener('imtv:orders-changed', onSync);
+    window.addEventListener('storage', onSync);
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      bc = new BroadcastChannel(ORDERS_SYNC_CHANNEL);
+      bc.onmessage = onSync;
     }
+
+    return () => {
+      window.clearInterval(pollTimer);
+      window.removeEventListener('imtv:orders-changed', onSync);
+      window.removeEventListener('storage', onSync);
+      bc?.close();
+    };
   }, [user, fetchBoardOrders]);
 
   const selectedCard = orders.find((o) => o.id === selectedOrderId) || orders[0] || null;
@@ -1010,8 +1035,8 @@ export function InternalPipefyBoard({
             </section>
           </div>
         ) : (
-          <div className="pipefy-sheet" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
-            Nenhum pedido encontrado para exibir detalhes.
+          <div className="pipefy-sheet" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
+            Quadro pronto para operação. Assim que uma unidade enviar um pedido, o cartão entrará automaticamente na coluna Recebido.
           </div>
         )}
       </main>
