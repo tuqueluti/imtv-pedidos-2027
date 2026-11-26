@@ -1,0 +1,9 @@
+@media (hover: hover) and (pointer: fine) {
+  [data-imtv-claquete="aberta"] {
+    cursor: url("./claquete-aberta.svg") 1 1, url("./claquete-aberta.png") 1 1, pointer !important;
+  }
+
+  [data-imtv-claquete="fechada"] {
+    cursor: url("./claquete-fechada.svg") 1 1, url("./claquete-fechada.png") 1 1, pointer !important;
+  }
+}
