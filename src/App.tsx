@@ -5,28 +5,6 @@ import { StudioOpening3D } from './components/StudioOpening3D.tsx';
 import { PublicBriefingForm } from './components/PublicBriefingForm.tsx';
 import { InternalPipefyBoard } from './components/InternalPipefyBoard.tsx';
 
-function detectShouldUseLiteStudio(): boolean {
-  if (typeof window === 'undefined') return false;
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-    return true;
-  }
-  const nav = navigator as Navigator & { deviceMemory?: number };
-  if (typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency <= 2) {
-    return true;
-  }
-  if (typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 2) {
-    return true;
-  }
-  try {
-    const testCanvas = document.createElement('canvas');
-    const gl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
-    if (!gl) return true;
-  } catch {
-    return true;
-  }
-  return false;
-}
-
 function readCurrentRoute(): 'public' | 'board' {
   if (typeof window === 'undefined') return 'public';
   if (
@@ -55,12 +33,7 @@ export function App() {
     logoUrl: assetUrl('/branding/imtv-logo-oficial.png'),
   });
 
-  const [useLiteStudio, setUseLiteStudio] = useState<boolean>(() =>
-    detectShouldUseLiteStudio()
-  );
-  const [formRevealedByScroll, setFormRevealedByScroll] = useState<boolean>(() =>
-    detectShouldUseLiteStudio()
-  );
+  const [formRevealedByScroll, setFormRevealedByScroll] = useState<boolean>(false);
 
   // Sincroniza o estado de som com o script clássico defer da claquete (imtv:som)
   useEffect(() => {
@@ -97,18 +70,6 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const mq = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (!mq) return;
-    const onChange = () => {
-      const lite = detectShouldUseLiteStudio();
-      setUseLiteStudio(lite);
-      if (lite) setFormRevealedByScroll(true);
-    };
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, []);
-
-  useEffect(() => {
     const onRouteSync = () => setRoute(readCurrentRoute());
     window.addEventListener('popstate', onRouteSync);
     window.addEventListener('hashchange', onRouteSync);
@@ -133,12 +94,6 @@ export function App() {
   }, []);
 
   const handleJumpToOrder = useCallback(() => {
-    if (useLiteStudio) {
-      setFormRevealedByScroll(true);
-      const el = document.getElementById('pedido');
-      el?.scrollIntoView({ behavior: 'auto' });
-      return;
-    }
     const track = document.querySelector('.studio-scroll-track') as HTMLElement | null;
     const stage = document.querySelector('.studio-sticky-stage') as HTMLElement | null;
     const targetY =
@@ -146,7 +101,7 @@ export function App() {
         ? Math.max(1, track.offsetHeight - stage.clientHeight + 8)
         : Math.ceil(window.innerHeight * 2.02);
     window.scrollTo({ top: targetY, behavior: 'smooth' });
-  }, [useLiteStudio]);
+  }, []);
 
   if (route === 'board') {
     return (
@@ -170,7 +125,6 @@ export function App() {
     <main>
       <StudioOpening3D
         logoUrl={publicConfig.logoUrl}
-        useLiteMode={useLiteStudio}
         soundEnabled={soundEnabled}
         onToggleSound={handleToggleSound}
         onFormRevealedChange={setFormRevealedByScroll}
@@ -182,8 +136,8 @@ export function App() {
         recipientTeamName={publicConfig.recipientTeamName}
         soundEnabled={soundEnabled}
         onToggleSound={handleToggleSound}
-        with3dHandoff={!useLiteStudio}
-        isRevealed={useLiteStudio || formRevealedByScroll}
+        with3dHandoff={true}
+        isRevealed={formRevealedByScroll}
         onNavigateBoard={() => navigateTo('board')}
       />
     </main>

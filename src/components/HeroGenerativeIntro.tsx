@@ -36,7 +36,7 @@ interface FlyingBit {
   accent: boolean;
 }
 
-const INTRO_DURATION_MS = 2850;
+const INTRO_DURATION_MS = 3200;
 
 const CODE_LINES_DESKTOP = [
   '// IMTV_STUDIO_2027.tsx · WebGL2 r187',
@@ -306,9 +306,7 @@ export function HeroGenerativeIntro({
   const [completed, setCompleted] = useState<boolean>(() => {
     if (skipImmediate) return true;
     if (typeof window === 'undefined') return true;
-    return Boolean(
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    );
+    return false;
   });
 
   const fastFinishRef = useRef(fastFinish);
@@ -332,8 +330,19 @@ export function HeroGenerativeIntro({
 
     let rafId = 0;
     let disposed = false;
-    const startTime = performance.now();
+    let startTime: number | null = null;
+    let warmupFrames = 0;
     let accelStart: number | null = null;
+
+    // Pinta imediatamente o fundo digital escuro no quadro 0 para não vazar o estúdio antes de iniciar os bits/códigos
+    const initW = canvas.parentElement?.clientWidth || window.innerWidth;
+    const initH = canvas.parentElement?.clientHeight || window.innerHeight;
+    const initDpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(1, Math.round(initW * initDpr));
+    canvas.height = Math.max(1, Math.round(initH * initDpr));
+    ctx.setTransform(initDpr, 0, 0, initDpr, 0, 0);
+    ctx.fillStyle = '#050609';
+    ctx.fillRect(0, 0, initW, initH);
 
     // Inicializa colunas de chuva de bits (0 / 1 / bytes hex IMTV)
     const hexPool = ['0', '1', '1', '0', '01', '10', '49', '4D', '54', '56', '27'];
@@ -515,11 +524,21 @@ export function HeroGenerativeIntro({
     const renderFrame = (now: number) => {
       if (disposed) return;
 
+      // Começa a contar o relógio da animação somente após o 1º quadro pintado (evita que a compilação WebGL consuma tempo da abertura)
+      if (warmupFrames < 1) {
+        warmupFrames += 1;
+        rafId = window.requestAnimationFrame(renderFrame);
+        return;
+      }
+      if (startTime === null) {
+        startTime = now;
+      }
+
       if (fastFinishRef.current && accelStart === null) {
         accelStart = now;
       }
 
-      let tNorm = (now - startTime) / INTRO_DURATION_MS;
+      let tNorm = Math.max(0, (now - startTime) / INTRO_DURATION_MS);
       if (accelStart !== null) {
         const fastElapsed = (now - accelStart) / 200;
         tNorm = Math.max(tNorm, 0.62 + fastElapsed * 0.42);

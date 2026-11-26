@@ -121,9 +121,11 @@ async function runE2E() {
   try {
     // =========================================================================
     // PARTE 1: COMPUTADOR (1440x900) — ABERTURA 3D + NOVO FORMULÁRIO 01/02/03
+    // Simula inclusive Windows 11 com "Efeitos de animação" desativados (reducedMotion: 'reduce')
     // =========================================================================
     const desktopCtx = await browser.newContext({
       viewport: { width: 1440, height: 900 },
+      reducedMotion: 'reduce',
     });
     const page = await desktopCtx.newPage();
     const pageErrors: string[] = [];
@@ -132,16 +134,18 @@ async function runE2E() {
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(820);
 
-    // 1a. Confere que a abertura generativa (códigos, cursores e bits) está ativa construindo a hero page
+    // 1a. Confere que o modo estático antigo NUNCA aparece e que a abertura generativa + palco 3D 100vh estão ativos no desktop
+    assert.equal(await page.locator('.studio-lite-hero').count(), 0);
+    assert.equal(await page.locator('.studio-scroll-track').getAttribute('data-stage-mode'), 'desktop');
     assert.equal(await page.getByTestId('hero-generative-intro').count(), 1);
     await page.screenshot({ path: path.join(shotsDir, '00a-desktop-hero-generativa-construindo.png') });
 
     // 1b. Captura a fase da varredura luminosa (scanline) revelando o estúdio 3D real por cima do blueprint
-    await page.waitForTimeout(1280);
+    await page.waitForTimeout(1450);
     await page.screenshot({ path: path.join(shotsDir, '00b-desktop-hero-scanline-revelando.png') });
 
-    // Aguarda encerramento completo e desmontagem limpa da camada generativa (~2.9s totais)
-    await page.waitForTimeout(1150);
+    // Aguarda encerramento completo e desmontagem limpa da camada generativa (~3.2s totais)
+    await page.waitForTimeout(1400);
     assert.equal(await page.getByTestId('hero-generative-intro').count(), 0);
 
     // Som já deve iniciar ativado ao entrar no link
@@ -478,7 +482,7 @@ async function runE2E() {
     await mPage.setViewportSize({ width: 390, height: 844 });
     await mPage.waitForTimeout(500);
     await mPage.screenshot({ path: path.join(shotsDir, '00c-mobile-hero-generativa.png') });
-    await mPage.waitForTimeout(2250);
+    await mPage.waitForTimeout(2650);
     assert.equal(await mPage.getByTestId('hero-generative-intro').count(), 0);
 
     // Verifica no celular (390x844) que o estúdio vertical está ativo, com som ligado e TV + player 100% encaixados sem deslocamento!
